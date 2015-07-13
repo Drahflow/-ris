@@ -1,0 +1,315 @@
+#!./loaded
+
+"https://ratsinfo.braunschweig.de/bi" ==:BASEURL
+"/opt/forallris" ==:DOCUMENTSTORAGE
+DOCUMENTSTORAGE "/cookies.txt" cat ==:COOKIES
+
+sys "+" via +linux "++" via
+
+{ { txt .produce .hu _ len 2 eq "%" "%0" ? -01 cat } each } /pctEncode deffst
+{ [ -01 { ==c [
+  { c 128 lt } { c }
+  { 1 } { 194 c 64 band 1 0 ? add  c 64 bnot band }
+] conds } each ] str .fromArray } /iso2utf8 deffst
+{ [ -01 { 32 max } each ] str .fromArray } /sanitize deffst
+{ [ -01 { ==c [
+  { c 47 eq } { 95 }
+  { c 33 ge } { c }
+  { 1 } { 95 }
+] conds } each ] str .fromArray } /sanitizeFilename deffst
+{ ==l ==s s len l gt { l s str .prefix } { s } ? * } /truncateTo deffst
+
+{
+  { "> " +out .writeall 30 +in .read "([0-9]+)" regex not } { "Bitte Zahl eingeben" dump } loop
+  txt .consume .u
+} /inputNumber deffst
+
+{ "\0" cat ++stat -01 -- 0 eq } /fileExists deffst
+{ "\0" cat -01 "\0" cat -01 ++symlink } /symlink deffst
+{ "\0" cat ++unlink } /unlink deffst
+{ COOKIES unlink } /killCookies deffst
+{ [ } "[|" deffd { ] |cat fold } "|]" deffd
+
+{ "^(..)-(.*)" regex not { "Dokumentnummer enthält keinen -." die } rep
+  ==year ==rest
+  [| DOCUMENTSTORAGE "/" year |] "\0" cat 511 ++mkdir --
+  [| DOCUMENTSTORAGE "/" year "/" year "-" rest ".pdf" |]
+} /storageFilename deffst
+{ "_([0-9][0-9]-[0-9-]+)_" regex } /extractNumber deffst
+
+{ sys .file -010 .open } /open deffd
+
+{ ==identifier =*upstream
+  identifier crypt .sha512 .hex _ ==hash "^(..)(..)(..)" regex -- ==dirA ==dirB ==dirC
+  [| DOCUMENTSTORAGE "/" dirA "/" dirB "/" dirC "/" hash |] ==cacheFile
+
+  cacheFile fileExists {
+    [| "Serving from cache file: " cacheFile |] dump
+    cacheFile open
+  } {
+    [| DOCUMENTSTORAGE "/" dirA |] "\0" cat 511 ++mkdir --
+    [| DOCUMENTSTORAGE "/" dirA "/" dirB |] "\0" cat 511 ++mkdir --
+    [| DOCUMENTSTORAGE "/" dirA "/" dirB "/" dirC |] "\0" cat 511 ++mkdir --
+
+    [| "Fetching from upstream: " identifier " to " cacheFile |] dump
+    cacheFile upstream
+
+    cacheFile fileExists {
+      cacheFile open
+    } {
+      <
+        { "/dev/null" open } =*empty
+      > ???io.web.fetch
+    } ? *
+  } ? *
+} /cache deffst
+
+{ ==url
+  { ==cacheFile
+    { [| "wget -O '" cacheFile "' '" BASEURL url "'" |] +shell } +spawn ":" via
+    { dump } :err .eachLine :wait --
+  } url cache
+} /fetch deffst
+
+{ ==name name "|" | name |defvst } ">=" defq
+{ ==name "}" | * ==f name "|" | f "*" | name "=" | } "}=" defq
+
+{ "/si010_e.asp" fetch ":" via # /ri/si010_e.asp?MM=5&amp;YY=2015
+  "??" ==weekday "??" ==monthday "??:??" ==time
+  [
+    { ==line [
+      { line "<td class=\"text2\" width=\"20\">(..)</td><td class=\"text2\" width=\"20\">(&nbsp;&nbsp;)?([^<]+)</td>" regex }' {
+        =weekday -- =monthday
+      }
+      { line "<td class=\"text2\">(..:..)&nbsp;</td>" regex }' {
+        =time
+      }
+      { line "<td><a href=\"to010.asp\\?SILFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
+        < ==id -- iso2utf8 sanitize ==title -- >=weekday >=monthday >=time >
+      }
+    ] conds } :eachLine :close
+  ]
+} /calendar deffst
+
+{ ==str
+  { str "^(.*)<a [^>]+>(.*)$" regex } { -01 cat =str } loop
+  { str "^(.*)</a>(.*)$" regex } { -01 cat =str } loop
+  str
+} /stripLinkParts deffst
+
+{ [| "/to010.asp?SILFDNR=" -102 |] fetch ":" via
+  { "?" ==maybeTitle "?" ==title "?" ==position "?" ==id "?" ==number }'
+    _ * =*reset
+  [
+    { ==line [
+      { line "<!--[0-9]+ -->" regex }' { maybeTitle iso2utf8 sanitize =title }
+      { line stripLinkParts "<td>([^<]+)</td>" regex }' { =maybeTitle }
+      { line stripLinkParts "<td>([^<]+)$" regex }' { =maybeTitle }
+      { line stripLinkParts "^([^<]+)$" regex }' { { -01 cat }=maybeTitle }
+      { line stripLinkParts "^([^<]+)</td>" regex }' { { -01 cat }=maybeTitle }
+      { line "<td class=\"text4\" nowrap=\"nowrap\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></td>" regex }' {
+        =position
+      }
+      { line "<td class=\"text4\" nowrap=\"nowrap\"><span style=\"background-color:#[^\"]+\" title=\"[^\"]+\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></span></td>" regex }' {
+        =position
+      }
+      { line "<td nowrap=\"nowrap\"><a href=\"vo020.asp\\?VOLFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
+        =id -- =number --
+      }
+      { line "	</tr>" regex position "?" neq and }' {
+        < number "?" neq ==hasDocument >=id >=number >=title >=position >
+        reset
+      }
+    ] conds } :eachLine :close
+  ]
+} /agenda deffst
+
+{ [| "/vo020.asp?VOLFDNR=" -102 |] _ fetch ":" via
+                                     BASEURL -01 cat ==url
+  [ {
+    [|
+      "<form action=\"do027.asp\" method=\"post\" style=\"margin:0\" *>"
+      "<input type=\"hidden\" name=\"DOLFDNR\" value=\"(\\d+)\" */>"
+      "<input type=\"hidden\" name=\"options\" value=\"64\" */>"
+      "<input type=\"hidden\" name=\"typ\" value=\"130\" */>"
+      "<input type=\"submit\" class=\"il2_p\" value=\"Vorlage-Sammeldokument\" title=\"Vorlage-Sammeldokument\" */>"
+      "</form>"
+    |] regex { _ dump ==id 
+      { ==cacheFile
+        # grab a session cookie -.-
+        {
+          [| "wget -O /dev/null --save-cookies '" COOKIES "' --keep-session-cookies '" url "'" |] +shell
+        } +spawn "::" via
+        { dump } ::err .eachLine ::wait --
+
+        {
+          [|
+            "wget -O '" cacheFile "' "
+            "--load-cookies '" COOKIES "' "
+            "'" BASEURL "/do027.asp' "
+            "--post-data='DOLFDNR=" id "&options=64&typ=130'"
+          |] +shell
+        } +spawn "::" via
+        { dump } ::err .eachLine ::wait --
+      } [| "/document/" id |] cache
+    } rep
+  } :eachLine :close ] ==docs
+
+  docs len 1 neq {
+    <
+      { docs { .close } '*0. "/dev/null" open } =*empty
+    > ???io.web.pattern
+  } rep
+
+  0 docs *
+} /fetchDocument deffst
+
+{ ==l { _ len l lt } { "0" -01 cat } loop } '01.0 /padTo deffst
+
+{ ":" via
+  [|
+    [ :position { _ "^([^.]*)\\.(.*)" regex } { -012 -- } loop ] 3 padTo { "." -201 cat cat } fold
+    "_" :number "_"
+    :title sanitizeFilename 60 truncateTo
+    ".pdf"
+  |]
+} /agendaFilename deffst
+
+{ ==title
+  [| "<html><head><title>" title "</title></head><body>" |]
+} /htmlHeader deffst
+
+{
+  [| "</body></html>" |]
+} /htmlFooter deffst
+
+<
+  { ==target ==text
+    [| "<a href=\"" target "\">" text "</a>" |]
+  } /a deffst
+  { "<br>" } /br deffst
+  { ==items
+    [|
+      "<ul>"
+      items { "<li>" -01 "</li>" } each
+      "</ul>"
+    |]
+  } /ul deffst
+  { ==rows
+    [|
+      "<table>"
+      rows { ==cols
+        "<tr>"
+        cols {
+          "<td>" -01 "</td>"
+        } each
+        "</tr>"
+      } each
+      "</table>"
+    |]
+  } /table deffst
+> "<>" via
+
+{ "=>" via
+  [|
+    "Sitzungsübersicht" htmlHeader
+    [
+      calendar { ":" via
+        [| :monthday ". " :time " - " :title |] [| "/agenda/" :id |] <>a
+      } each
+    ] <>ul
+    htmlFooter
+  |] =>okHtml
+} /showCalendar deffst
+
+{ "=>" via ==id
+  [|
+    "Tagesordnung" htmlHeader
+    [
+      id agenda { ":" via
+        [
+          :position :number
+          :title :hasDocument { [| "/editor/" :id |] <>a } rep
+        ]
+      } each
+    ] <>table
+    htmlFooter
+  |] =>okHtml
+} /showAgenda deffst
+
+{ "=>" via ==id
+  [|
+    "<html><head><title>Vorlage</title>"
+    "<script src=\"/pdf.js\"></script>"
+    "<script>"
+    "  'use strict';"
+    "  PDFJS.workerSrc = '/pdf.worker.js';"
+    "  PDFJS.getDocument('/document/" id "').then(function(pdf) {"
+    "    pdf.getPage(1).then(function(page) {"
+    "      var scale = 1.5;"
+    "      var viewport = page.getViewport(scale);"
+    "      var canvas = document.getElementById('doc');"
+    "      var context = canvas.getContext('2d');"
+    "      canvas.height = viewport.height;"
+    "      canvas.width = viewport.width;"
+    "      var renderContext = {"
+    "        canvasContext: context,"
+    "        viewport: viewport"
+    "      };"
+    "      page.render(renderContext);"
+    "    });"
+    "  });"
+    "</script>"
+    "</head>"
+    "<body>"
+      "<canvas id=\"doc\" style=\"border:1px solid black;\"/>"
+    "</body>"
+    "</html>"
+  |] =>okHtml
+} /showEditor deffst
+
+{ "=>" via fetchDocument ":" via
+  [|
+    { 4096 4096 mul :read _ "" neq } { } loop :close
+  |] "application/pdf" =>ok
+} /showDocument deffst
+
+{ "=>" via
+  [|
+    "Seite nicht gefunden" htmlHeader
+    "Diese Seite existiert nicht"
+    htmlFooter
+  |] =>failHtml
+} /showNotFound deffst
+
+{ open ":" via
+  [| { 4096 4096 mul :read _ "" neq } { } loop :close |]
+} /slurp deffd
+
+"pdf.js/build/pdf.js" slurp ==:PDFJS
+"pdf.js/build/pdf.worker.js" slurp ==:PDFJSWORKER
+
+{
+  net .alg .httpServer "+" via
+  { 8091 } +port
+  {
+    <
+      { "text/html; charset=utf-8;" ok } =*okHtml
+      { "text/html; charset=utf-8;" fail } =*failHtml
+    >' _ ":_" defvst ":" via
+    :url dump
+    [
+      { :url "/" eq } { :_ showCalendar }
+      { :url "/agenda/(\\d+)" regex } { :_ showAgenda }
+      { :url "/editor/(\\d+)" regex } { :_ showEditor }
+      { :url "/document/(\\d+)" regex } { :_ showDocument }
+      { :url "/pdf.js" eq } { PDFJS "text/javascript; charset=utf-8;" :ok }
+      { :url "/pdf.worker.js" eq } { PDFJSWORKER "text/javascript; charset=utf-8;" :ok }
+      { 1 } { :_ showNotFound }
+    ] conds
+  } +request
+  { 64 1024 1024 mul mul } +outputBufferLimit
+  +run
+} /forallris sys .freeze
+
+# vim: syn=elymas
