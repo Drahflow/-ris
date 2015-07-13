@@ -238,39 +238,12 @@ sys "+" via +linux "++" via
 } /showAgenda deffst
 
 { "=>" via ==id
-  [|
-    "<html><head><title>Vorlage</title>"
-    "<script src=\"/pdf.js\"></script>"
-    "<script>"
-    "  'use strict';"
-    "  PDFJS.workerSrc = '/pdf.worker.js';"
-    "  PDFJS.getDocument('/document/" id "').then(function(pdf) {"
-    "    pdf.getPage(1).then(function(page) {"
-    "      var scale = 1.5;"
-    "      var viewport = page.getViewport(scale);"
-    "      var canvas = document.getElementById('doc');"
-    "      var context = canvas.getContext('2d');"
-    "      canvas.height = viewport.height;"
-    "      canvas.width = viewport.width;"
-    "      var renderContext = {"
-    "        canvasContext: context,"
-    "        viewport: viewport"
-    "      };"
-    "      page.render(renderContext);"
-    "    });"
-    "  });"
-    "</script>"
-    "</head>"
-    "<body>"
-      "<canvas id=\"doc\" style=\"border:1px solid black;\"/>"
-    "</body>"
-    "</html>"
-  |] =>okHtml
+  VIEWER =>okHtml
 } /showEditor deffst
 
 { "=>" via fetchDocument ":" via
   [|
-    { 4096 4096 mul :read _ "" neq } { } loop :close
+    { 8192 :read _ "" neq } { } loop :close
   |] "application/pdf" =>ok
 } /showDocument deffst
 
@@ -283,11 +256,24 @@ sys "+" via +linux "++" via
 } /showNotFound deffst
 
 { open ":" via
-  [| { 4096 4096 mul :read _ "" neq } { } loop :close |]
+  [| { 8192 :read _ "" neq } { } loop :close |]
 } /slurp deffd
 
 "pdf.js/build/pdf.js" slurp ==:PDFJS
 "pdf.js/build/pdf.worker.js" slurp ==:PDFJSWORKER
+"pdf.js/build/generic/web/compatibility.js" slurp ==:COMPATIBILITYJS
+"pdf.js/build/generic/web/l10n.js" slurp ==:LOCALIZATIONJS
+"pdf.js/build/generic/web/locale/de/viewer.properties" slurp ==:LOCALE
+"viewer.js" slurp ==:VIEWERJS
+"viewer.css" slurp ==:VIEWERCSS
+"viewer.html" slurp ==:VIEWER
+map ==:PNGS map ==:GIFS
+"pdf.js/build/generic/web/images/*.png" sys .glob { _ dump ==img
+  img slurp "pdf.js/build/generic/web" len img str .postfix PNGS =[]
+} each
+"pdf.js/build/generic/web/images/*.gif" sys .glob { _ dump ==img
+  img slurp "pdf.js/build/generic/web" len img str .postfix GIFS =[]
+} each
 
 {
   net .alg .httpServer "+" via
@@ -305,6 +291,13 @@ sys "+" via +linux "++" via
       { :url "/document/(\\d+)" regex } { :_ showDocument }
       { :url "/pdf.js" eq } { PDFJS "text/javascript; charset=utf-8;" :ok }
       { :url "/pdf.worker.js" eq } { PDFJSWORKER "text/javascript; charset=utf-8;" :ok }
+      { :url "/compatibility.js" eq } { COMPATIBILITYJS "text/javascript; charset=utf-8;" :ok }
+      { :url "/l10n.js" eq } { LOCALIZATIONJS "text/javascript; charset=utf-8;" :ok }
+      { :url "/locale.properties" eq } { LOCALE "application/l10n" :ok }
+      { :url "/viewer.js" eq } { VIEWERJS "text/javascript; charset=utf-8;" :ok }
+      { :url "/viewer.css" eq } { VIEWERCSS "text/css; charset=utf-8;" :ok }
+      { :url PNGS .has } { :url PNGS * "image/png" :ok }
+      { :url GIFS .has } { :url GIFS * "image/gif" :ok }
       { 1 } { :_ showNotFound }
     ] conds
   } +request
