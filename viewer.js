@@ -13,6 +13,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Further modifications have been applied to this file by
+ * Drahflow <drahflow@gmx.de> as part of the ∀RIS project.
  */
 /* globals PDFJS, PDFBug, FirefoxCom, Stats, Cache, ProgressBar,
            DownloadManager, getFileName, getPDFFileNameFromURL,
@@ -3497,6 +3500,7 @@ var TEXT_LAYER_RENDER_DELAY = 200; // ms
  * @property {PDFRenderingQueue} renderingQueue - The rendering queue object.
  * @property {IPDFTextLayerFactory} textLayerFactory
  * @property {IPDFAnnotationsLayerFactory} annotationsLayerFactory
+ * @property {IPDFCommentsLayerFactory} commentsLayerFactory
  */
 
 /**
@@ -3516,6 +3520,7 @@ var PDFPageView = (function PDFPageViewClosure() {
     var renderingQueue = options.renderingQueue;
     var textLayerFactory = options.textLayerFactory;
     var annotationsLayerFactory = options.annotationsLayerFactory;
+    var commentsLayerFactory = options.commentsLayerFactory;
 
     this.id = id;
     this.renderingId = 'page' + id;
@@ -3529,6 +3534,7 @@ var PDFPageView = (function PDFPageViewClosure() {
     this.renderingQueue = renderingQueue;
     this.textLayerFactory = textLayerFactory;
     this.annotationsLayerFactory = annotationsLayerFactory;
+    this.commentsLayerFactory = commentsLayerFactory;
 
     this.renderingState = RenderingStates.INITIAL;
     this.resume = null;
@@ -3541,6 +3547,7 @@ var PDFPageView = (function PDFPageViewClosure() {
     this.zoomLayer = null;
 
     this.annotationLayer = null;
+    this.commentsLayer = null;
 
     var div = document.createElement('div');
     div.id = 'pageContainer' + this.id;
@@ -3587,9 +3594,11 @@ var PDFPageView = (function PDFPageViewClosure() {
       var currentZoomLayer = this.zoomLayer || null;
       var currentAnnotationNode = (keepAnnotations && this.annotationLayer &&
                                    this.annotationLayer.div) || null;
+      var currentCommentsNode = (keepAnnotations && this.commentsLayer &&
+          this.commentsLayer.div) || null;
       for (var i = childNodes.length - 1; i >= 0; i--) {
         var node = childNodes[i];
-        if (currentZoomLayer === node || currentAnnotationNode === node) {
+        if (currentZoomLayer === node || currentAnnotationNode === node || currentCommentsNode === node) {
           continue;
         }
         div.removeChild(node);
@@ -3602,8 +3611,12 @@ var PDFPageView = (function PDFPageViewClosure() {
           // so they are not displayed on the already-resized page
           this.annotationLayer.hide();
         }
+        if (this.commentsLayer) {
+          this.commentsLayer.hide();
+        }
       } else {
         this.annotationLayer = null;
+        this.commentsLayer = null;
       }
 
       if (this.canvas) {
@@ -3735,6 +3748,9 @@ var PDFPageView = (function PDFPageViewClosure() {
 
       if (redrawAnnotations && this.annotationLayer) {
         this.annotationLayer.setupAnnotations(this.viewport);
+      }
+      if (redrawAnnotations && this.commentsLayer) {
+        this.commentsLayer.setupComments(this.viewport);
       }
     },
 
@@ -3941,6 +3957,13 @@ var PDFPageView = (function PDFPageViewClosure() {
             createAnnotationsLayerBuilder(div, this.pdfPage);
         }
         this.annotationLayer.setupAnnotations(this.viewport);
+      }
+      if (this.commentsLayerFactory) {
+        if (!this.commentsLayer) {
+          this.commentsLayer = this.commentsLayerFactory.
+            createCommentsLayerBuilder(div, this.pdfPage);
+        }
+        this.commentsLayer.setupComments(this.viewport);
       }
       div.setAttribute('data-loaded', true);
 
@@ -4581,6 +4604,235 @@ DefaultAnnotationsLayerFactory.prototype = {
 
 
 /**
+ * @typedef {Object} CommentsLayerBuilderOptions
+ * @property {HTMLDivElement} pageDiv
+ * @property {PDFPage} pdfPage
+ * @property {IPDFLinkService} linkService
+ */
+
+/**
+ * @class
+ */
+var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
+  /**
+   * @param {CommentsLayerBuilderOptions} options
+   * @constructs CommentsLayerBuilder
+   */
+  function CommentsLayerBuilder(options) {
+    this.pageDiv = options.pageDiv;
+    this.pdfPage = options.pdfPage;
+    this.commentsProvider = options.commentsProvider;
+    this.commentsEditor = options.commentsEditor;
+
+    this.div = null;
+  }
+  CommentsLayerBuilder.prototype =
+      /** @lends CommentsLayerBuilder.prototype */ {
+
+    /**
+     * @param {PageViewport} viewport
+     */
+    setupComments:
+        function CommentsLayerBuilder_setupComments(viewport) {
+      var pdfPage = this.pdfPage;
+      var commentsData = this.commentsProvider(pdfPage.pageIndex);
+      var self = this;
+
+      viewport = viewport.clone({ dontFlip: true });
+      self.transform = viewport.transform;
+      var transformStr = 'matrix(' + self.transform.join(',') + ')';
+      var data, element, i, j;
+
+      if (self.div) {
+        for (i = 0; i < self.div.childNodes.length; ++i) {
+          var child = self.div.childNodes[i];
+
+          CustomStyle.setProp('transform', child, transformStr);
+        }
+        self.div.removeAttribute('hidden');
+      } else {
+        var commentsLayerDiv = document.createElement('div');
+        commentsLayerDiv.className = 'commentsLayer';
+
+        self.pageDiv.appendChild(commentsLayerDiv);
+
+        this.setupCommentEditing();
+
+        self.div = commentsLayerDiv;
+
+        var svgns = "http://www.w3.org/2000/svg";
+
+        var svg = document.createElementNS(svgns, 'svg');
+        svg.setAttribute('width', Math.floor(viewport.width) + "px");
+        svg.setAttribute('height', Math.floor(viewport.height) + "px");
+        svg.setAttribute('version', "1.1");
+        svg.setAttribute('xmlns', svgns);
+        self.div.appendChild(svg);
+
+        var transformOriginStr = '0px 0px';
+        CustomStyle.setProp('transform', svg, transformStr);
+        CustomStyle.setProp('transformOrigin', svg, transformOriginStr);
+
+        if(commentsData == null) return;
+
+        var strokes = commentsData.querySelectorAll('stroke');
+        for (i = 0; i < strokes.length; ++i) {
+          var stroke = strokes[i];
+          var coordinates = stroke.textContent.split(' ');
+          var polylineCoordinates = '';
+
+          for (j = 0; j < coordinates.length - 1; ) {
+            if(coordinates[j] == '') {
+              ++j;
+            } else {
+              polylineCoordinates += coordinates[j] + "," + coordinates[j + 1] + " ";
+              j += 2;
+            }
+          }
+
+          polylineCoordinates = polylineCoordinates.trim();
+
+          var polyline = document.createElementNS(svgns, 'polyline');
+          polyline.setAttribute('points', polylineCoordinates);
+          polyline.setAttribute('fill', 'none');
+          polyline.setAttribute('stroke', stroke.getAttribute('color'));
+          polyline.setAttribute('stroke-width', stroke.getAttribute('width'));
+
+          if(stroke.getAttribute('tool') == 'highlighter') {
+            polyline.setAttribute('opacity', '0.5');
+            polyline.setAttribute('stroke-linecap', 'round');
+          }
+          svg.appendChild(polyline);
+        }
+
+        var texts = commentsData.querySelectorAll('text');
+        for (i = 0; i < texts.length; ++i) {
+          var text = texts[i];
+
+          var box = document.createElement('div');
+          box.style.position = 'absolute';
+
+          var x = Math.floor(text.getAttribute('x'));
+          var y = Math.floor(text.getAttribute('y'));
+
+          box.style.left = x + "px";
+          box.style.top = y + "px";
+          box.style.color = text.getAttribute('color');
+          box.style.fontFamily = '"Dejavu Sans", sans-serif';
+          box.style.fontSize = text.getAttribute('size') + 'px';
+
+          var html = text.textContent;
+          html = html.replace("\n", "<br>");
+          box.innerHTML = html;
+
+          self.div.appendChild(box);
+          console.warn(box);
+          console.warn(text.textContent);
+
+          var transformOriginStr = -x + "px " + -y + "px";
+          CustomStyle.setProp('transform', box, transformStr);
+          CustomStyle.setProp('transformOrigin', box, transformOriginStr);
+        }
+      }
+    },
+
+    setupCommentEditing: function CommentsLayerBuilder_setupCommentEditing() {
+      var self = this;
+      var page = self.pageDiv;
+      var state = {
+        currentPolyline: null,
+      };
+
+      function totalOffset(node) {
+        var ret = { x: 0, y: 0 };
+        while(node) {
+          ret.x += node.offsetLeft - node.scrollLeft;
+          ret.y += node.offsetTop - node.scrollTop;
+          node = node.offsetParent;
+        }
+        return ret;
+      };
+
+      self._mouseup = function(e) {
+        page.removeEventListener('mouseup', self._mouseup);
+        page.removeEventListener('mousemove', self._mousemove);
+        page.removeEventListener('mousedown', self._mousedown);
+
+        var xournalCoordinates = state.currentPolyline.getAttribute('points');
+        xournalCoordinates = xournalCoordinates.replace(/,/g, ' ');
+
+        var element =
+          '<stroke tool="' + self.commentsEditor.getCurrentTool() + '" ' +
+            'color="' + self.commentsEditor.getCurrentColor() + '" ' +
+            'width="' + state.currentPolyline.getAttribute('stroke-width') + '">\n' +
+            xournalCoordinates + "\n" +
+          '</stroke>';
+
+        self.commentsEditor.add(self.pdfPage.pageIndex, element);
+
+        state.currentPolyline = null;
+      };
+
+      self._mousemove = function(e) {
+        var offset = totalOffset(page);
+        var x = e.pageX - offset.x - page.clientTop;
+        var y = e.pageY - offset.y - page.clientLeft;
+        // TODO: this should actually be the full inverse transformation
+        x /= self.transform[0];
+        y /= self.transform[3];
+
+        state.currentPolyline.setAttribute('points',
+            state.currentPolyline.getAttribute('points') +
+            " " + x + "," + y);
+      };
+
+      self._mousedown = function(e) {
+        if(self.commentsEditor.getCurrentTool() == null) return;
+
+        page.addEventListener('mouseup', self._mouseup);
+        page.addEventListener('mousemove', self._mousemove);
+
+        var svg = self.div.querySelector('svg');
+
+        var offset = totalOffset(page);
+        var x = e.pageX - offset.x - page.clientTop;
+        var y = e.pageY - offset.y - page.clientLeft;
+        // TODO: this should actually be the full inverse transformation
+        x /= self.transform[0];
+        y /= self.transform[3];
+
+        var svgns = "http://www.w3.org/2000/svg";
+        var polyline = document.createElementNS(svgns, 'polyline');
+        polyline.setAttribute('points', x + "," + y + " " + (x + 0.001) + "," + y);
+        polyline.setAttribute('fill', 'none');
+        polyline.setAttribute('stroke', self.commentsEditor.getCurrentColor());
+
+        if(self.commentsEditor.getCurrentTool() == 'highlighter') {
+          polyline.setAttribute('stroke-width', 8.50);
+          polyline.setAttribute('opacity', '0.5');
+          polyline.setAttribute('stroke-linecap', 'round');
+        } else if(self.commentsEditor.getCurrentTool() == 'pen') {
+          polyline.setAttribute('stroke-width', 1.41);
+        }
+        svg.appendChild(polyline);
+
+        state.currentPolyline = polyline;
+      };
+
+      page.addEventListener('mousedown', self._mousedown);
+    },
+
+    hide: function () {
+      if (!this.div) {
+        return;
+      }
+      this.div.setAttribute('hidden', 'true');
+    }
+  };
+  return CommentsLayerBuilder;
+})();
+
+/**
  * @typedef {Object} PDFViewerOptions
  * @property {HTMLDivElement} container - The container for the viewer element.
  * @property {HTMLDivElement} viewer - (optional) The viewer element.
@@ -4637,6 +4889,8 @@ var PDFViewer = (function pdfViewer() {
     this.container = options.container;
     this.viewer = options.viewer || options.container.firstElementChild;
     this.linkService = options.linkService || new SimpleLinkService();
+    this.commentsProvider = options.commentsProvider;
+    this.commentsEditor = options.commentsEditor;
     this.removePageBorders = options.removePageBorders || false;
 
     this.defaultRenderingQueue = !options.renderingQueue;
@@ -4835,7 +5089,8 @@ var PDFViewer = (function pdfViewer() {
             defaultViewport: viewport.clone(),
             renderingQueue: this.renderingQueue,
             textLayerFactory: textLayerFactory,
-            annotationsLayerFactory: this
+            annotationsLayerFactory: this,
+            commentsLayerFactory: this
           });
           bindOnAfterAndBeforeDraw(pageView);
           this._pages.push(pageView);
@@ -5288,6 +5543,20 @@ var PDFViewer = (function pdfViewer() {
         pageDiv: pageDiv,
         pdfPage: pdfPage,
         linkService: this.linkService
+      });
+    },
+
+    /**
+     * @param {HTMLDivElement} pageDiv
+     * @param {PDFPage} pdfPage
+     * @returns {CommentsLayerBuilder}
+     */
+    createCommentsLayerBuilder: function (pageDiv, pdfPage) {
+      return new CommentsLayerBuilder({
+        pageDiv: pageDiv,
+        pdfPage: pdfPage,
+        commentsProvider: this.commentsProvider,
+        commentsEditor: this.commentsEditor,
       });
     },
 
@@ -6050,6 +6319,9 @@ var PDFViewerApplication = {
   preferenceDefaultZoomValue: '',
   isViewerEmbedded: (window.parent !== window),
   url: '',
+  commentData: null,
+  currentCommentTool: null,
+  currentCommentColor: null,
 
   // called once when the document is loaded
   initialize: function pdfViewInitialize() {
@@ -6062,11 +6334,19 @@ var PDFViewerApplication = {
 
     var container = document.getElementById('viewerContainer');
     var viewer = document.getElementById('viewer');
+    var self = this;
+
     this.pdfViewer = new PDFViewer({
       container: container,
       viewer: viewer,
       renderingQueue: pdfRenderingQueue,
-      linkService: pdfLinkService
+      linkService: pdfLinkService,
+      commentsProvider: function(pageIndex) { return self.getComments(pageIndex); },
+      commentsEditor: {
+        add: function(pageIndex, element) { return self.addComments(pageIndex, element); },
+        getCurrentTool: function() { return self.currentCommentTool; },
+        getCurrentColor: function() { return self.currentCommentColor; }
+      },
     });
     pdfRenderingQueue.setViewer(this.pdfViewer);
     pdfLinkService.setViewer(this.pdfViewer);
@@ -6418,6 +6698,73 @@ var PDFViewerApplication = {
     }
   },
 
+  openComments: function pdfCommentsOpen(file, onload) {
+    var parameters = { };
+    var self = this;
+
+    if (typeof file === 'string') { // URL
+      parameters.url = file;
+    } else if (file && 'byteLength' in file) { // ArrayBuffer
+      parameters.data = file;
+    } else if (file.url && file.originalUrl) {
+      parameters.url = file.url;
+    }
+
+    if('url' in parameters) {
+      var xhr = new XMLHttpRequest();
+      xhr.onload = function() {
+        self.loadComments(xhr.responseXML, parameters.url);
+
+        if(onload) onload();
+      };
+      try {
+        xhr.open('GET', file);
+        xhr.overrideMimeType("text/xml");
+        xhr.send();
+      } catch (e) {
+        PDFViewerApplication.error(mozL10n.get('loading_error_comments', null,
+          'An error occurred while loading document comments.'), e);
+      }
+    } else if('data' in parameters) {
+      self.loadComments(parameters.data);
+    }
+  },
+
+  getComments: function pdfViewGetComments(pageIndex) {
+    var pages = this.commentsData.querySelectorAll('page');
+    return pages[pageIndex];
+  },
+
+  addComments: function pdfViewAddComments(pageIndex, element) {
+    var self = this;
+
+    var xhr = new XMLHttpRequest();
+    xhr.onload = function() {
+      self.openComments(self.commentsUrl, function() {
+        var page = self.pdfViewer.getPageView(pageIndex);
+        page.reset();
+        page.draw();
+      });
+    };
+    try {
+      var page = self.pdfViewer.getPageView(pageIndex);
+
+      xhr.open('POST', this.commentsUrl + "/add?page=" + (pageIndex + 1) +
+          "&width=" + page.viewport.width / page.viewport.transform[0] +
+          "&height=" + page.viewport.height / page.viewport.transform[3] * -1);
+      xhr.setRequestHeader("Content-type", "text/xml");
+      xhr.send(element);
+    } catch (e) {
+      PDFViewerApplication.error(mozL10n.get('editing_error_comments', null,
+        'An error occurred while editing document comments.'), e);
+    }
+  },
+
+  setCommentStyle: function pdfViewSetCommentStyle(tool, color) {
+    this.currentCommentTool = tool;
+    this.currentCommentColor = color;
+  },
+
   download: function pdfViewDownload() {
     function downloadByUrl() {
       downloadManager.downloadUrl(url, filename);
@@ -6745,6 +7092,11 @@ var PDFViewerApplication = {
     });
   },
 
+  loadComments: function pdfViewLoadComments(commentsData, commentsUrl) {
+    this.commentsData = commentsData;
+    this.commentsUrl = commentsUrl;
+  },
+
   setInitialView: function pdfViewSetInitialView(storedHash, scale) {
     this.isInitialViewSet = true;
 
@@ -7001,6 +7353,9 @@ function webViewerInitialized() {
   var file = "" + document.location;
   file = file.replace("/editor/", "/document/");
 
+  var comments = "" + document.location;
+  comments = comments.replace("/editor/", "/comments/");
+
   var fileInput = document.createElement('input');
   fileInput.id = 'fileInput';
   fileInput.className = 'fileInput';
@@ -7191,6 +7546,28 @@ function webViewerInitialized() {
   document.getElementById('download').addEventListener('click',
     SecondaryToolbar.downloadClick.bind(SecondaryToolbar));
 
+  var i;
+  var highlighters = document.getElementById('toolbarEdit-highlight').querySelectorAll('button');
+  for (i = 0; i < highlighters.length; ++i) {
+    var div = highlighters[i].querySelector('div');
+    highlighters[i].addEventListener('click',
+      function closure(div) {
+        return function(e) {
+          PDFViewerApplication.setCommentStyle('highlighter', div.textContent);
+        }
+      }(div));
+  }
+
+  var pens = document.getElementById('toolbarEdit-pen').querySelectorAll('button');
+  for (i = 0; i < pens.length; ++i) {
+    var div = pens[i].querySelector('div');
+    pens[i].addEventListener('click',
+      function closure(div) {
+        return function(e) {
+          PDFViewerApplication.setCommentStyle('pen', div.textContent);
+        }
+      }(div));
+  }
 
   if (file && file.lastIndexOf('file:', 0) === 0) {
     // file:-scheme. Load the contents in the main thread because QtWebKit
@@ -7214,6 +7591,9 @@ function webViewerInitialized() {
 
   if (file) {
     PDFViewerApplication.open(file, 0);
+  }
+  if (comments) {
+    PDFViewerApplication.openComments(comments, function() { });
   }
 }
 

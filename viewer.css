@@ -11,6 +11,9 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Further modifications have been applied to this file by
+ * Drahflow <drahflow@gmx.de> as part of the ∀RIS project.
  */
 
 .textLayer {
@@ -112,6 +115,15 @@
 .annotationLayer .annotLink > a /* -ms-a */  {
   background: url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAA\
                    LAAAAAABAAEAAAIBRAA7") 0 0 repeat;
+}
+
+.commentsLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
 }
 
 .pdfViewer .canvasWrapper {
@@ -676,6 +688,59 @@ html[dir='rtl'] .findbar > * {
   float: right;
 }
 
+html[dir='rtl'] #toolbarEdit {
+  position: absolute;
+  top: 42px;
+  left: 26px;
+}
+
+html[dir='ltr'] #toolbarEdit {
+  position: absolute;
+  top: 42px;
+  right: 26px;
+}
+
+#toolbarEdit {
+  /* background-image: url(images/texture.png); */
+  border-right: solid 1px black;
+  border-bottom: solid 1px black;
+  border-left: solid 1px #c0c0c0;
+  border-top: solid 1px #c0c0c0;
+  padding: 2px;
+}
+
+#toolbarEdit-highlight > button {
+  padding: 10px;
+  float: left;
+  border: 0 none;
+  background: none;
+  margin: 0px;
+}
+
+#toolbarEdit-highlight > button > div {
+  width: 10px;
+  height: 10px;
+  font-size: 0px;
+}
+
+#toolbarEdit-pen {
+  clear: both;
+}
+
+#toolbarEdit-pen > button {
+  padding: 13px;
+  float: left;
+  border: 0 none;
+  background: none;
+  margin: 0px;
+}
+
+#toolbarEdit-pen > button > div {
+  width: 4px;
+  height: 4px;
+  font-size: 0px;
+}
+
 html[dir='ltr'] .splitToolbarButton {
   margin: 3px 2px 4px 0;
   display: inline-block;
@@ -726,7 +791,11 @@ html[dir='rtl'] .splitToolbarButton > .toolbarButton {
 .splitToolbarButton:hover > .toolbarButton,
 .splitToolbarButton:focus > .toolbarButton,
 .splitToolbarButton.toggled > .toolbarButton,
-.toolbarButton.textButton {
+.toolbarButton.textButton,
+#toolbarEdit-highlight > button:hover,
+#toolbarEdit-highlight > button:focus,
+#toolbarEdit-pen > button:hover,
+#toolbarEdit-pen > button:focus {
   background-color: hsla(0,0%,0%,.12);
   background-image: linear-gradient(hsla(0,0%,100%,.05), hsla(0,0%,100%,0));
   background-clip: padding-box;
@@ -748,7 +817,9 @@ html[dir='rtl'] .splitToolbarButton > .toolbarButton {
 .dropdownToolbarButton:hover,
 .overlayButton:hover,
 .toolbarButton.textButton:hover,
-.toolbarButton.textButton:focus {
+.toolbarButton.textButton:focus,
+#toolbarEdit-highlight > button:focus,
+#toolbarEdit-pen > button:focus {
   background-color: hsla(0,0%,0%,.2);
   box-shadow: 0 1px 0 hsla(0,0%,100%,.05) inset,
               0 0 1px hsla(0,0%,100%,.15) inset,
@@ -810,6 +881,27 @@ html[dir='rtl'] .splitToolbarButtonSeparator {
 .overlayButton {
   min-width: 16px;
   padding: 2px 6px 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  color: hsla(0,0%,100%,.8);
+  font-size: 12px;
+  line-height: 14px;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  /* Opera does not support user-select, use <... unselectable="on"> instead */
+  cursor: default;
+  -webkit-transition-property: background-color, border-color, box-shadow;
+  -webkit-transition-duration: 150ms;
+  -webkit-transition-timing-function: ease;
+  transition-property: background-color, border-color, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+#toolbarEdit-highlight > button,
+#toolbarEdit-pen > button {
+  min-width: 16px;
   border: 1px solid transparent;
   border-radius: 2px;
   color: hsla(0,0%,100%,.8);
