@@ -4625,7 +4625,10 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
     this.commentsEditor = options.commentsEditor;
 
     this.div = null;
+    this.currentPolyline = null;
+    this.currentText = null;
   }
+
   CommentsLayerBuilder.prototype =
       /** @lends CommentsLayerBuilder.prototype */ {
 
@@ -4655,10 +4658,9 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
         commentsLayerDiv.className = 'commentsLayer';
 
         self.pageDiv.appendChild(commentsLayerDiv);
+        self.div = commentsLayerDiv;
 
         this.setupCommentEditing();
-
-        self.div = commentsLayerDiv;
 
         var svgns = "http://www.w3.org/2000/svg";
 
@@ -4737,10 +4739,6 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
     setupCommentEditing: function CommentsLayerBuilder_setupCommentEditing() {
       var self = this;
       var page = self.pageDiv;
-      var state = {
-        currentPolyline: null,
-        currentText: null,
-      };
 
       function totalOffset(node) {
         var ret = { x: 0, y: 0 };
@@ -4755,33 +4753,30 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
       self._mouseup = function(e) {
         page.removeEventListener('mouseup', self._mouseup);
         page.removeEventListener('mousemove', self._mousemove);
-        page.removeEventListener('mousedown', self._mousedown);
 
-        var xournalCoordinates = state.currentPolyline.getAttribute('points');
+        var xournalCoordinates = self.currentPolyline.getAttribute('points');
         xournalCoordinates = xournalCoordinates.replace(/,/g, ' ');
 
         var element =
           '<stroke tool="' + self.commentsEditor.getCurrentTool() + '" ' +
             'color="' + self.commentsEditor.getCurrentColor() + '" ' +
-            'width="' + state.currentPolyline.getAttribute('stroke-width') + '">\n' +
+            'width="' + self.currentPolyline.getAttribute('stroke-width') + '">\n' +
             xournalCoordinates + "\n" +
           '</stroke>';
 
+        self.currentPolyline = null;
         self.commentsEditor.add(self.pdfPage.pageIndex, element);
-
-        state.currentPolyline = null;
       };
 
       self._blur = function(e) {
-        state.currentText.removeEventListener('blur', self._blur);
-        page.removeEventListener('mousedown', self._mousedown);
+        self.currentText.removeEventListener('blur', self._blur);
 
-        var x = state.currentText.style.left;
-        var y = state.currentText.style.top;
+        var x = self.currentText.style.left;
+        var y = self.currentText.style.top;
         x = x.replace('px', '');
         y = y.replace('px', '');
 
-        var text = state.currentText.innerHTML;
+        var text = self.currentText.innerHTML;
         text = text.replace(/<br>/g, "\n");
 
         var element =
@@ -4792,10 +4787,9 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           text +
           '</text>';
 
+        self.currentText = null;
         self.commentsEditor.stopTextEditing();
         self.commentsEditor.add(self.pdfPage.pageIndex, element);
-
-        state.currentText = null;
       };
 
       self._mousemove = function(e) {
@@ -4806,8 +4800,8 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
         x /= self.transform[0];
         y /= self.transform[3];
 
-        state.currentPolyline.setAttribute('points',
-            state.currentPolyline.getAttribute('points') +
+        self.currentPolyline.setAttribute('points',
+            self.currentPolyline.getAttribute('points') +
             " " + x + "," + y);
       };
 
@@ -4841,7 +4835,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           CustomStyle.setProp('transform', box, transformStr);
           CustomStyle.setProp('transformOrigin', box, transformOriginStr);
 
-          state.currentText = box;
+          self.currentText = box;
           box.addEventListener('blur', self._blur);
           self.commentsEditor.startTextEditing();
         } else {
@@ -4865,11 +4859,16 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           }
           svg.appendChild(polyline);
 
-          state.currentPolyline = polyline;
+          self.currentPolyline = polyline;
         }
       };
 
+      if(page.commentsMouseListener != null) {
+        page.removeEventListener('mousedown', page.commentsMouseListener);
+      }
+
       page.addEventListener('mousedown', self._mousedown);
+      page.commentsMouseListener = self._mousedown;
     },
 
     hide: function () {
