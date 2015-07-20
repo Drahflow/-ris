@@ -4774,6 +4774,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
 
       self._blur = function(e) {
         state.currentText.removeEventListener('blur', self._blur);
+        page.removeEventListener('mousedown', self._mousedown);
 
         var x = state.currentText.style.left;
         var y = state.currentText.style.top;
