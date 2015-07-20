@@ -3,8 +3,9 @@
 "xml.ey" include
 
 "https://ratsinfo.braunschweig.de/bi" ==:BASEURL
-"/opt/forallris" ==:DOCUMENTSTORAGE
-DOCUMENTSTORAGE "/cookies.txt" cat ==:COOKIES
+"/opt/forallris/cache" ==:CACHESTORAGE
+"/opt/forallris/comments" ==:COMMENTSSTORAGE
+CACHESTORAGE "/cookies.txt" cat ==:COOKIES
 
 sys "+" via +linux "++" via
 
@@ -32,44 +33,46 @@ sys "+" via +linux "++" via
 { COOKIES unlink } /killCookies deffst
 { [ } "[|" deffd { ] |cat fold } "|]" deffd
 
-{ "^(..)-(.*)" regex not { "Dokumentnummer enthält keinen -." die } rep
-  ==year ==rest
-  [| DOCUMENTSTORAGE "/" year |] "\0" cat 511 ++mkdir --
-  [| DOCUMENTSTORAGE "/" year "/" year "-" rest ".pdf" |]
-} /storageFilename deffst
 { "_([0-9][0-9]-[0-9-]+)_" regex } /extractNumber deffst
 
 { sys .file -010 .open } /open deffd
 
-{
+{ ==storage
   crypt .sha512 .hex _ ==hash "^(..)(..)(..)" regex -- ==dirA ==dirB ==dirC
-  [| DOCUMENTSTORAGE "/" dirA "/" dirB "/" dirC "/" hash |]
-} /cacheFilename deffst
+  [| storage "/" dirA "/" dirB "/" dirC "/" hash |]
+} /storageFilename deffst
 
-{ ==identifier =*upstream
+{ CACHESTORAGE storageFilename } /cacheFilename deffst
+{ COMMENTSSTORAGE storageFilename } /commentsFilename deffst
+
+{ ==storage ==identifier =*upstream
   identifier crypt .sha512 .hex _ ==hash "^(..)(..)(..)" regex -- ==dirA ==dirB ==dirC
-  [| DOCUMENTSTORAGE "/" dirA "/" dirB "/" dirC "/" hash |] ==cacheFile
+  [| storage "/" dirA "/" dirB "/" dirC "/" hash |] ==storageFile
 
-  cacheFile fileExists {
-    [| "Serving from cache file: " cacheFile |] dump
-    cacheFile open
+  storageFile fileExists {
+    [| "Serving from storage file: " storageFile |] dump
+    storageFile open
   } {
-    [| DOCUMENTSTORAGE "/" dirA |] "\0" cat 511 ++mkdir --
-    [| DOCUMENTSTORAGE "/" dirA "/" dirB |] "\0" cat 511 ++mkdir --
-    [| DOCUMENTSTORAGE "/" dirA "/" dirB "/" dirC |] "\0" cat 511 ++mkdir --
+    [| storage |] "\0" cat 511 ++mkdir --
+    [| storage "/" dirA |] "\0" cat 511 ++mkdir --
+    [| storage "/" dirA "/" dirB |] "\0" cat 511 ++mkdir --
+    [| storage "/" dirA "/" dirB "/" dirC |] "\0" cat 511 ++mkdir --
 
-    [| "Fetching from upstream: " identifier " to " cacheFile |] dump
-    cacheFile upstream
+    [| "Fetching from upstream: " identifier " to " storageFile |] dump
+    storageFile upstream
 
-    cacheFile fileExists {
-      cacheFile open
+    storageFile fileExists {
+      storageFile open
     } {
       <
         { "/dev/null" open } =*empty
       > ???io.web.fetch
     } ? *
   } ? *
-} /cache deffst
+} /storage deffst
+
+{ CACHESTORAGE storage } /cache deffst
+{ COMMENTSSTORAGE storage } /comments deffst
 
 { ==url
   { ==cacheFile
@@ -335,7 +338,7 @@ sys "+" via +linux "++" via
         < "" ==name ==text > [ -01 ] ==children
       >
     }
-    { =>body "<text font=\"Sans\" size=\"12.00\" x=\"([^\"]+)\" y=\"([^\"]+)\" color=\"([^\"]+)\">([^<>&]+)</text>" regex } {
+    { =>body "<text font=\"Sans\" size=\"12.00\" x=\"([^\"]+)\" y=\"([^\"]+)\" color=\"([^\"]+)\">(([^<>&]|&lt;|&gt;|&amp;)+)</text>" regex } {
       <
         "text" ==name map ==attr
         "Sans" /font attr =[]
@@ -344,7 +347,7 @@ sys "+" via +linux "++" via
         /y attr =[]
         /color attr =[]
 
-        < "" ==name ==text > [ -01 ] ==children
+        < "" ==name ==text -- > [ -01 ] ==children
       >
     }
     { 1 } {
@@ -357,7 +360,7 @@ sys "+" via +linux "++" via
     sys .file ":" via :creating :writeonly cacheFile :open
     EMPTYXOJ :writeall
     :close
-  } identifier cache ":" via
+  } identifier comments ":" via
   
   [|
     { 8192 :read _ "" neq } { } loop :close
@@ -394,17 +397,20 @@ sys "+" via +linux "++" via
   changedPage 1 sub pages * { .name "layer" eq } selectNodes 0 -01 * _ .children [ newElement ] cat
                                                                        -01 .setChildren
 
-  "Rewriting: " identifier cacheFilename cat dump
-  sys .file _ ":" via :truncating :writeonly identifier cacheFilename :open
+  identifier commentsFilename ==storageFile
+  "Rewriting: " storageFile cat dump
+  sys .file _ ":" via :truncating :creating :writeonly storageFile ".new" cat :open
               pages writeXournal :close
+
+  storageFile ".new" cat storageFile +rename
 
   "Added." "text/plain" =>ok
 } /addComments deffst
 
 { "=>" via ==id
   [| "/comments/" id |] ==identifier
-  identifier cacheFilename fileExists {
-    { "Cache file should have existed." die } identifier cache ":" via
+  identifier commentsFilename fileExists {
+    { "Comments file should have existed." die } identifier comments ":" via
 
     [|
       { 8192 :read _ "" neq } { } loop :close
