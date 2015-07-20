@@ -723,7 +723,8 @@ html[dir='ltr'] #toolbarEdit {
   font-size: 0px;
 }
 
-#toolbarEdit-pen {
+#toolbarEdit-pen,
+#toolbarEdit-text {
   clear: both;
 }
 
@@ -739,6 +740,26 @@ html[dir='ltr'] #toolbarEdit {
   width: 4px;
   height: 4px;
   font-size: 0px;
+}
+
+#toolbarEdit-text > button {
+  padding: 2px;
+  float: left;
+  border: 0 none;
+  background: none;
+  margin: 0px;
+}
+
+#toolbarEdit-text > button > div {
+  width: 26px;
+  max-width: 26px;
+  height: 20px;
+  max-height: 20px;
+  overflow: hidden;
+  padding-top: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  font-style: italic;
 }
 
 html[dir='ltr'] .splitToolbarButton {
@@ -795,7 +816,9 @@ html[dir='rtl'] .splitToolbarButton > .toolbarButton {
 #toolbarEdit-highlight > button:hover,
 #toolbarEdit-highlight > button:focus,
 #toolbarEdit-pen > button:hover,
-#toolbarEdit-pen > button:focus {
+#toolbarEdit-pen > button:focus,
+#toolbarEdit-text > button:hover,
+#toolbarEdit-text > button:focus {
   background-color: hsla(0,0%,0%,.12);
   background-image: linear-gradient(hsla(0,0%,100%,.05), hsla(0,0%,100%,0));
   background-clip: padding-box;
@@ -819,7 +842,8 @@ html[dir='rtl'] .splitToolbarButton > .toolbarButton {
 .toolbarButton.textButton:hover,
 .toolbarButton.textButton:focus,
 #toolbarEdit-highlight > button:focus,
-#toolbarEdit-pen > button:focus {
+#toolbarEdit-pen > button:focus,
+#toolbarEdit-text > button:focus {
   background-color: hsla(0,0%,0%,.2);
   box-shadow: 0 1px 0 hsla(0,0%,100%,.05) inset,
               0 0 1px hsla(0,0%,100%,.15) inset,
@@ -900,7 +924,8 @@ html[dir='rtl'] .splitToolbarButtonSeparator {
 }
 
 #toolbarEdit-highlight > button,
-#toolbarEdit-pen > button {
+#toolbarEdit-pen > button,
+#toolbarEdit-text > button {
   min-width: 16px;
   border: 1px solid transparent;
   border-radius: 2px;

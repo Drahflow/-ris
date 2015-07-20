@@ -269,6 +269,7 @@ sys "+" via +linux "++" via
       { c 38 eq }' { "&amp;" { } each }'
       { c 60 eq }' { "&lt;" { } each }'
       { c 62 eq }' { "&gt;" { } each }'
+      { 1 }' { c }'
     ] conds
   } each ] str .fromArray
 } /escapeXML deffst
@@ -330,6 +331,18 @@ sys "+" via +linux "++" via
         /tool attr =[]
         /color attr =[]
         /width attr =[]
+
+        < "" ==name ==text > [ -01 ] ==children
+      >
+    }
+    { =>body "<text font=\"Sans\" size=\"12.00\" x=\"([^\"]+)\" y=\"([^\"]+)\" color=\"([^\"]+)\">([^<>&]+)</text>" regex } {
+      <
+        "text" ==name map ==attr
+        "Sans" /font attr =[]
+        "12.00" /size attr =[]
+        /x attr =[]
+        /y attr =[]
+        /color attr =[]
 
         < "" ==name ==text > [ -01 ] ==children
       >

@@ -4726,8 +4726,6 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           box.innerHTML = html;
 
           self.div.appendChild(box);
-          console.warn(box);
-          console.warn(text.textContent);
 
           var transformOriginStr = -x + "px " + -y + "px";
           CustomStyle.setProp('transform', box, transformStr);
@@ -4741,6 +4739,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
       var page = self.pageDiv;
       var state = {
         currentPolyline: null,
+        currentText: null,
       };
 
       function totalOffset(node) {
@@ -4773,6 +4772,31 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
         state.currentPolyline = null;
       };
 
+      self._blur = function(e) {
+        state.currentText.removeEventListener('blur', self._blur);
+
+        var x = state.currentText.style.left;
+        var y = state.currentText.style.top;
+        x = x.replace('px', '');
+        y = y.replace('px', '');
+
+        var text = state.currentText.innerHTML;
+        text = text.replace(/<br>/g, "\n");
+
+        var element =
+          '<text font="Sans" size="12.00" ' +
+          'x="' + x + '" ' +
+          'y="' + y + '" ' +
+          'color="' + self.commentsEditor.getCurrentColor() + '">' +
+          text +
+          '</text>';
+
+        self.commentsEditor.stopTextEditing();
+        self.commentsEditor.add(self.pdfPage.pageIndex, element);
+
+        state.currentText = null;
+      };
+
       self._mousemove = function(e) {
         var offset = totalOffset(page);
         var x = e.pageX - offset.x - page.clientTop;
@@ -4789,11 +4813,6 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
       self._mousedown = function(e) {
         if(self.commentsEditor.getCurrentTool() == null) return;
 
-        page.addEventListener('mouseup', self._mouseup);
-        page.addEventListener('mousemove', self._mousemove);
-
-        var svg = self.div.querySelector('svg');
-
         var offset = totalOffset(page);
         var x = e.pageX - offset.x - page.clientTop;
         var y = e.pageY - offset.y - page.clientLeft;
@@ -4801,22 +4820,52 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
         x /= self.transform[0];
         y /= self.transform[3];
 
-        var svgns = "http://www.w3.org/2000/svg";
-        var polyline = document.createElementNS(svgns, 'polyline');
-        polyline.setAttribute('points', x + "," + y + " " + (x + 0.001) + "," + y);
-        polyline.setAttribute('fill', 'none');
-        polyline.setAttribute('stroke', self.commentsEditor.getCurrentColor());
+        if(self.commentsEditor.getCurrentTool() == 'text') {
+          var box = document.createElement('div');
+          box.style.position = 'absolute';
 
-        if(self.commentsEditor.getCurrentTool() == 'highlighter') {
-          polyline.setAttribute('stroke-width', 8.50);
-          polyline.setAttribute('opacity', '0.5');
-          polyline.setAttribute('stroke-linecap', 'round');
-        } else if(self.commentsEditor.getCurrentTool() == 'pen') {
-          polyline.setAttribute('stroke-width', 1.41);
+          box.style.left = x + "px";
+          box.style.top = y + "px";
+          box.style.color = self.commentsEditor.getCurrentColor();
+          box.style.fontFamily = '"Dejavu Sans", sans-serif';
+          box.style.fontSize = '12px';
+          box.contentEditable = true;
+          box.innerHTML = '&nbsp;';
+
+          self.div.appendChild(box);
+          window.setTimeout(function() { box.focus(); }, 1);
+
+          var transformStr = 'matrix(' + self.transform.join(',') + ')';
+          var transformOriginStr = -x + "px " + -y + "px";
+          CustomStyle.setProp('transform', box, transformStr);
+          CustomStyle.setProp('transformOrigin', box, transformOriginStr);
+
+          state.currentText = box;
+          box.addEventListener('blur', self._blur);
+          self.commentsEditor.startTextEditing();
+        } else {
+          page.addEventListener('mouseup', self._mouseup);
+          page.addEventListener('mousemove', self._mousemove);
+
+          var svg = self.div.querySelector('svg');
+
+          var svgns = "http://www.w3.org/2000/svg";
+          var polyline = document.createElementNS(svgns, 'polyline');
+          polyline.setAttribute('points', x + "," + y + " " + (x + 0.001) + "," + y);
+          polyline.setAttribute('fill', 'none');
+          polyline.setAttribute('stroke', self.commentsEditor.getCurrentColor());
+
+          if(self.commentsEditor.getCurrentTool() == 'highlighter') {
+            polyline.setAttribute('stroke-width', 8.50);
+            polyline.setAttribute('opacity', '0.5');
+            polyline.setAttribute('stroke-linecap', 'round');
+          } else if(self.commentsEditor.getCurrentTool() == 'pen') {
+            polyline.setAttribute('stroke-width', 1.41);
+          }
+          svg.appendChild(polyline);
+
+          state.currentPolyline = polyline;
         }
-        svg.appendChild(polyline);
-
-        state.currentPolyline = polyline;
       };
 
       page.addEventListener('mousedown', self._mousedown);
@@ -6322,6 +6371,7 @@ var PDFViewerApplication = {
   commentData: null,
   currentCommentTool: null,
   currentCommentColor: null,
+  commentTextEditing: false,
 
   // called once when the document is loaded
   initialize: function pdfViewInitialize() {
@@ -6345,7 +6395,9 @@ var PDFViewerApplication = {
       commentsEditor: {
         add: function(pageIndex, element) { return self.addComments(pageIndex, element); },
         getCurrentTool: function() { return self.currentCommentTool; },
-        getCurrentColor: function() { return self.currentCommentColor; }
+        getCurrentColor: function() { return self.currentCommentColor; },
+        startTextEditing: function() { return self.commentTextEditing = true; },
+        stopTextEditing: function() { return self.commentTextEditing = false; }
       },
     });
     pdfRenderingQueue.setViewer(this.pdfViewer);
@@ -7569,6 +7621,19 @@ function webViewerInitialized() {
       }(div));
   }
 
+  var texts = document.getElementById('toolbarEdit-text').querySelectorAll('button');
+  for (i = 0; i < texts.length; ++i) {
+    var div = texts[i].querySelector('div');
+    texts[i].addEventListener('click',
+      function closure(div) {
+        return function(e) {
+          var color = div.id;
+          color = color.replace('toolbarEdit-text-', '');
+          PDFViewerApplication.setCommentStyle('text', color);
+        }
+      }(div));
+  }
+
   if (file && file.lastIndexOf('file:', 0) === 0) {
     // file:-scheme. Load the contents in the main thread because QtWebKit
     // cannot load file:-URLs in a Web Worker. file:-URLs are usually loaded
@@ -7900,6 +7965,9 @@ window.addEventListener('click', function click(evt) {
 
 window.addEventListener('keydown', function keydown(evt) {
   if (OverlayManager.active) {
+    return;
+  }
+  if(PDFViewerApplication.commentTextEditing) {
     return;
   }
 
