@@ -115,8 +115,8 @@ sys "+" via +linux "++" via
       { line "<!--[0-9]+ -->" regex }' { maybeTitle iso2utf8 sanitize =title }
       { line stripLinkParts "<td>([^<]+)</td>" regex }' { =maybeTitle }
       { line stripLinkParts "<td>([^<]+)$" regex }' { =maybeTitle }
-      { line stripLinkParts "^([^<]+)$" regex }' { { -01 cat }=maybeTitle }
-      { line stripLinkParts "^([^<]+)</td>" regex }' { { -01 cat }=maybeTitle }
+      { line stripLinkParts "^([^<]+)$" regex }' { { " " cat -01 cat }=maybeTitle }
+      { line stripLinkParts "^([^<]+)</td>" regex }' { { " " cat -01 cat }=maybeTitle }
       { line "<td class=\"text4\" nowrap=\"nowrap\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></td>" regex }' {
         =position
       }
