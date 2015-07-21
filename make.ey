@@ -188,11 +188,11 @@ sys "+" via +linux "++" via
 } /agendaFilename deffst
 
 { ==title
-  [| "<html><head><title>" title "</title></head><body>" |]
+  [| "<html><head><title>" title "</title></head><body>\n" |]
 } /htmlHeader deffst
 
 {
-  [| "</body></html>" |]
+  [| "</body></html>\n" |]
 } /htmlFooter deffst
 
 <
@@ -203,21 +203,21 @@ sys "+" via +linux "++" via
   { ==items
     [|
       "<ul>"
-      items { "<li>" -01 "</li>" } each
-      "</ul>"
+      items { "<li>" -01 "</li>\n" } each
+      "</ul>\n"
     |]
   } /ul deffst
   { ==rows
     [|
-      "<table>"
+      "<table>\n"
       rows { ==cols
         "<tr>"
         cols {
           "<td>" -01 "</td>"
         } each
-        "</tr>"
+        "</tr>\n"
       } each
-      "</table>"
+      "</table>\n"
     |]
   } /table deffst
 > "<>" via
