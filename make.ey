@@ -84,18 +84,23 @@ sys "+" via +linux "++" via
 { ==name name "|" | name |defvst } ">=" defq
 { ==name "}" | * ==f name "|" | f "*" | name "=" | } "}=" defq
 
-{ "/si010_e.asp" fetch ":" via # /ri/si010_e.asp?MM=5&amp;YY=2015
-  "??" ==weekday "??" ==monthday "??:??" ==time
+{ "/si010_e.asp?"
+  {
+    { [| "date '+MM=%-m&amp;YY=%Y'" |] +shell } +spawn ":" via
+    4096 :out .read "\n" str .split 0 -01 * :wait --
+  } * cat
+  fetch ":" via # /ri/si010_e.asp?MM=5&amp;YY=2015
+  "??" ==weekday "??" ==monthday "??:??" ==time 0 ==past
   [
     { ==line [
       { line "<td class=\"text2\" width=\"20\">(..)</td><td class=\"text2\" width=\"20\">(&nbsp;&nbsp;)?([^<]+)</td>" regex }' {
         =weekday -- =monthday
       }
-      { line "<td class=\"text2\">(..:..)&nbsp;</td>" regex }' {
-        =time
+      { line "<td class=\"text2\">(..:..)( - ..:..)?&nbsp;</td>" regex }' {
+        =time "" neq =past
       }
       { line "<td><a href=\"to010.asp\\?SILFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
-        < ==id -- iso2utf8 sanitize ==title -- >=weekday >=monthday >=time >
+        < ==id -- iso2utf8 sanitize ==title -- >=weekday >=monthday >=time >=past >
       }
     ] conds } :eachLine :close
   ]
@@ -135,11 +140,11 @@ sys "+" via +linux "++" via
 } /agenda deffst
 
 [|
-  "<form action=\"do027.asp\" method=\"post\" style=\"margin:0\" *>"
-  "<input type=\"hidden\" name=\"DOLFDNR\" value=\"(\\d+)\" */>"
-  "<input type=\"hidden\" name=\"options\" value=\"64\" */>"
-  "<input type=\"hidden\" name=\"typ\" value=\"130\" */>"
-  "<input type=\"submit\" class=\"il2_p\" value=\"Vorlage-Sammeldokument\" title=\"Vorlage-Sammeldokument\" */>"
+  "<form action=\"do027.asp\" method=\"post\"[^>]*>"
+  "<input type=\"hidden\" name=\"DOLFDNR\" value=\"(\\d+)\"[^>]*>"
+  "<input type=\"hidden\" name=\"options\" value=\"64\"[^>]*>"
+  "<input type=\"hidden\" name=\"typ\" value=\"130\"[^>]*>"
+  "<input type=\"submit\" class=\"il2_p\" value=\"Vorlage-Sammeldokument[^\"]*\" title=\"Vorlage-Sammeldokument[^\"]*\"[^>]*>"
   "</form>"
 |] enregex =*:DOCUMENTLINKREGEX
 
@@ -227,7 +232,9 @@ sys "+" via +linux "++" via
     "Sitzungsübersicht" htmlHeader
     [
       calendar { ":" via
-        [| :monthday ". " :time " - " :title |] [| "/agenda/" :id |] <>a
+          [| :monthday ". " :time :past { " (vergangen)" } rep " - " :title |]
+          [| "/agenda/" :id |]
+        <>a
       } each
     ] <>ul
     htmlFooter
@@ -298,6 +305,48 @@ sys "+" via +linux "++" via
       layer { .name "" neq } selectNodes { ==item
         [
           { item .name "stroke" eq } {
+            "<stroke tool=\"" /tool item .attr * "\" color=\"" /color item .attr * "\" width=\"" /width item .attr * "\" user=\"" /user item .attr * "\">"
+            item .children { .text } each
+            "</stroke>\n"
+          }
+          { item .name "text" eq } {
+            "<text font=\"" /font item .attr *
+              "\" size=\"" /size item .attr * "\" x=\"" /x item .attr * "\" y=\"" /y item .attr *
+              "\" color=\"" /color item .attr * "\" user=\"" /user item .attr * "\">"
+            [| item .children { .text } each |] escapeXML
+            "</text>\n"
+          }
+        ] conds
+      } each
+      "</layer>\n"
+    } each
+    "</page>\n"
+  |] :writeall } each
+
+  "</xournal>\n" :writeall
+} /writeXournal deffst
+
+{ ==pages
+  "<?xml version=\"1.0\" standalone=\"no\"?>\n"
+  "<xournal version=\"0.4.7\">\n"
+  "<title>Xournal document - see http://math.mit.edu/~auroux/software/xournal/</title>\n"
+
+  1 ==firstPage
+  pages { ==page [|
+    "<page width=\"" /width page .attr * "\" height=\"" /height page .attr * "\">\n"
+    page { .name "background" eq } selectNodes 0 -01 * ==background
+    "<background type=\"pdf\" "
+      firstPage {
+        0 =firstPage
+        "domain=\"" /domain background .attr * "\" filename=\"" /filename background .attr * "\" "
+      } rep
+      "pageno=\"" /pageno background .attr * "\" "
+    "/>\n"
+    page { .name "layer" eq } selectNodes { ==layer
+      "<layer>\n"
+      layer { .name "" neq } selectNodes { ==item
+        [
+          { item .name "stroke" eq } {
             "<stroke tool=\"" /tool item .attr * "\" color=\"" /color item .attr * "\" width=\"" /width item .attr * "\">"
             item .children { .text } each
             "</stroke>\n"
@@ -314,17 +363,17 @@ sys "+" via +linux "++" via
       "</layer>\n"
     } each
     "</page>\n"
-  |] :writeall } each
+  |] } each
 
-  "</xournal>\n" :writeall
-} /writeXournal deffst
+  "</xournal>\n"
+} /exportXournal deffst
 
 { "=>" via ==id [| "/comments/" id |] ==identifier
   "Adding comment" dump
   =>args .page dump
   =>body dump
 
-  # FIXME: input validation .page, .width, .height
+  # FIXME: input validation .page, .width, .height, .user (must exist and have valid format)
   =>args .page txt .consume .u ==changedPage
 
   [
@@ -334,6 +383,7 @@ sys "+" via +linux "++" via
         /tool attr =[]
         /color attr =[]
         /width attr =[]
+        =>args .user /user attr =[]
 
         < "" ==name ==text > [ -01 ] ==children
       >
@@ -346,6 +396,7 @@ sys "+" via +linux "++" via
         /x attr =[]
         /y attr =[]
         /color attr =[]
+        =>args .user /user attr =[]
 
         < "" ==name ==text -- > [ -01 ] ==children
       >
@@ -414,12 +465,13 @@ sys "+" via +linux "++" via
 
     [|
       { 8192 :read _ "" neq } { } loop :close
-    |]
+    |] xml .parse { .name "page" eq } selectNodes ==pages
+
+    [| pages exportXournal |]
   } {
     EMPTYXOJ
   } ? *
   "application/xournal" =>ok
-  # XOJ "application/xournal" =>ok
 } /showComments deffst
 
 { "=>" via
@@ -452,6 +504,7 @@ map ==:PNGS map ==:GIFS
 
 "test.pdf.xoj.gunz" slurp ==:XOJ
 "empty.xoj.gunz" slurp ==:EMPTYXOJ
+"erase.png" slurp "/erase.png" PNGS =[]
 
 {
   net .alg .httpServer "+" via
@@ -464,11 +517,13 @@ map ==:PNGS map ==:GIFS
     :url dump
     [
       { :url "/" eq } { :_ showCalendar }
-      { :url "/agenda/(\\d+)" regex } { :_ showAgenda }
-      { :url "/editor/(\\d+)" regex } { :_ showEditor }
-      { :url "/document/(\\d+)" regex } { :_ showDocument }
-      { :url "/comments/(\\d+)/add" regex } { :_ addComments }
-      { :url "/comments/(\\d+)" regex } { :_ showComments }
+      { :url "/agenda/(\\d+)$" regex } { :_ showAgenda }
+      { :url "/editor/(\\d+)$" regex } { :_ showEditor }
+      { :url "/editor/(\\d+).pdf$" regex } { :_ showDocument }
+      { :url "/editor/(\\d+).xoj$" regex } { :_ showComments }
+      { :url "/document/(\\d+)$" regex } { :_ showDocument }
+      { :url "/comments/(\\d+)/add$" regex } { :_ addComments }
+      { :url "/comments/(\\d+)$" regex } { :_ showComments }
       { :url "/pdf.js" eq } { PDFJS "text/javascript; charset=utf-8;" :ok }
       { :url "/pdf.worker.js" eq } { PDFJSWORKER "text/javascript; charset=utf-8;" :ok }
       { :url "/compatibility.js" eq } { COMPATIBILITYJS "text/javascript; charset=utf-8;" :ok }

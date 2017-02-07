@@ -4835,7 +4835,9 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           CustomStyle.setProp('transform', box, transformStr);
           CustomStyle.setProp('transformOrigin', box, transformOriginStr);
 
+          if(self.currentText != null) self._blur(e);
           self.currentText = box;
+
           box.addEventListener('blur', self._blur);
           self.commentsEditor.startTextEditing();
         } else {
@@ -6796,19 +6798,25 @@ var PDFViewerApplication = {
         var page = self.pdfViewer.getPageView(pageIndex);
         page.reset();
         page.draw();
+
+        document.body.className = null;
       });
     };
     try {
+      document.body.className = 'processing';
       var page = self.pdfViewer.getPageView(pageIndex);
 
       xhr.open('POST', this.commentsUrl + "/add?page=" + (pageIndex + 1) +
           "&width=" + page.viewport.width / page.viewport.transform[0] +
-          "&height=" + page.viewport.height / page.viewport.transform[3] * -1);
+          "&height=" + page.viewport.height / page.viewport.transform[3] * -1 +
+          "&user=" + document.getElementById('toolbarEdit-username').value);
       xhr.setRequestHeader("Content-type", "text/xml");
       xhr.send(element);
     } catch (e) {
       PDFViewerApplication.error(mozL10n.get('editing_error_comments', null,
         'An error occurred while editing document comments.'), e);
+
+      document.body.className = null;
     }
   },
 
