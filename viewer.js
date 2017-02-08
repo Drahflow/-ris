@@ -4704,6 +4704,8 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
             polyline.setAttribute('opacity', '0.5');
             polyline.setAttribute('stroke-linecap', 'round');
           }
+
+          polyline.addEventListener('mousedown', self._elementClickHandler);
           svg.appendChild(polyline);
         }
 
@@ -4727,6 +4729,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           html = html.replace("\n", "<br>");
           box.innerHTML = html;
 
+          box.addEventListener('mousedown', self._elementClickHandler);
           self.div.appendChild(box);
 
           var transformOriginStr = -x + "px " + -y + "px";
@@ -4840,7 +4843,8 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
 
           box.addEventListener('blur', self._blur);
           self.commentsEditor.startTextEditing();
-        } else {
+        } else if(self.commentsEditor.getCurrentTool() == 'highlighter' ||
+                  self.commentsEditor.getCurrentTool() == 'pen') {
           page.addEventListener('mouseup', self._mouseup);
           page.addEventListener('mousemove', self._mousemove);
 
@@ -4862,6 +4866,55 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           svg.appendChild(polyline);
 
           self.currentPolyline = polyline;
+        } else if(self.commentsEditor.getCurrentTool() == 'erase') {
+          // handled via onmousedown handlers on SVG elements
+        } else {
+          console.error('Invalid comment mode: ' + self.commentsEditor.getCurrentTool());
+        }
+      };
+
+      self._elementClickHandler = function(e) {
+        var element = this;
+
+        if(self.commentsEditor.getCurrentTool() == 'erase') {
+          if(element instanceof SVGPolylineElement) {
+            var tool = 'highlighter';
+            if(element.getAttribute('stroke-width') < 2.0) {
+              tool = 'pen';
+            }
+
+            var xournalCoordinates = element.getAttribute('points');
+            xournalCoordinates = xournalCoordinates.replace(/,/g, ' ');
+
+            var element =
+              '<stroke tool="' + tool + '" ' +
+                'color="' + element.getAttribute('stroke') + '" ' +
+                'width="' + element.getAttribute('stroke-width') + '">\n' +
+                xournalCoordinates + "\n" +
+              '</stroke>';
+
+            self.commentsEditor.remove(self.pdfPage.pageIndex, element);
+            return false;
+          } else if(element instanceof HTMLDivElement) {
+            var x = element.style.left;
+            var y = element.style.top;
+            x = x.replace('px', '');
+            y = y.replace('px', '');
+
+            var text = element.innerHTML;
+            text = text.replace(/<br>/g, "\n");
+
+            var element =
+              '<text font="Sans" size="12.00" ' +
+              'x="' + x + '" ' +
+              'y="' + y + '" ' +
+              'color="' + element.style.color + '">' +
+              text +
+              '</text>';
+
+            self.commentsEditor.remove(self.pdfPage.pageIndex, element);
+            return false;
+          }
         }
       };
 
@@ -6396,6 +6449,7 @@ var PDFViewerApplication = {
       commentsProvider: function(pageIndex) { return self.getComments(pageIndex); },
       commentsEditor: {
         add: function(pageIndex, element) { return self.addComments(pageIndex, element); },
+        remove: function(pageIndex, element) { return self.removeComments(pageIndex, element); },
         getCurrentTool: function() { return self.currentCommentTool; },
         getCurrentColor: function() { return self.currentCommentColor; },
         startTextEditing: function() { return self.commentTextEditing = true; },
@@ -6789,7 +6843,7 @@ var PDFViewerApplication = {
     return pages[pageIndex];
   },
 
-  addComments: function pdfViewAddComments(pageIndex, element) {
+  changeComments: function pdfViewAddComments(action, pageIndex, element) {
     var self = this;
 
     var xhr = new XMLHttpRequest();
@@ -6799,14 +6853,18 @@ var PDFViewerApplication = {
         page.reset();
         page.draw();
 
-        document.body.className = null;
+        if(self.pdfViewer.commentsEditor.getCurrentTool() == 'erase') {
+          document.body.className = 'deleting';
+        } else {
+          document.body.className = null;
+        }
       });
     };
     try {
       document.body.className = 'processing';
       var page = self.pdfViewer.getPageView(pageIndex);
 
-      xhr.open('POST', this.commentsUrl + "/add?page=" + (pageIndex + 1) +
+      xhr.open('POST', this.commentsUrl + "/" + action + "?page=" + (pageIndex + 1) +
           "&width=" + page.viewport.width / page.viewport.transform[0] +
           "&height=" + page.viewport.height / page.viewport.transform[3] * -1 +
           "&user=" + document.getElementById('toolbarEdit-username').value);
@@ -6820,7 +6878,21 @@ var PDFViewerApplication = {
     }
   },
 
+  addComments: function pdfViewSetCommentStyle(pageIndex, element) {
+    this.changeComments('add', pageIndex, element);
+  },
+
+  removeComments: function pdfViewSetCommentStyle(pageIndex, element) {
+    this.changeComments('remove', pageIndex, element);
+  },
+
   setCommentStyle: function pdfViewSetCommentStyle(tool, color) {
+    if(tool == 'erase') {
+      document.body.className = 'deleting';
+    } else if(document.body.className == 'deleting') {
+      document.body.className = null;
+    }
+
     this.currentCommentTool = tool;
     this.currentCommentColor = color;
   },
@@ -7640,6 +7712,17 @@ function webViewerInitialized() {
           PDFViewerApplication.setCommentStyle('text', color);
         }
       }(div));
+  }
+
+  {
+    var erase = document.getElementById('toolbarEdit-erase').querySelectorAll('button');
+    var div = erase[0].querySelector('div');
+      erase[0].addEventListener('click',
+        function closure(div) {
+          return function(e) {
+            PDFViewerApplication.setCommentStyle('erase', null);
+          }
+        }(div));
   }
 
   if (file && file.lastIndexOf('file:', 0) === 0) {

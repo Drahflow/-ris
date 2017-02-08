@@ -771,6 +771,10 @@ html[dir='ltr'] #toolbarEdit {
   font-style: italic;
 }
 
+#toolbarEdit-erase {
+  padding-left: 94px;
+}
+
 #toolbarEdit-erase > button {
   padding: 0px;
   float: left;
@@ -1804,6 +1808,10 @@ html[dir='rtl'] #documentPropertiesOverlay .row > * {
 
 .processing {
   cursor: wait !important;
+}
+
+.deleting {
+  cursor: crosshair !important;
 }
 
 @page {

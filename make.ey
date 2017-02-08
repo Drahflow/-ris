@@ -84,12 +84,9 @@ sys "+" via +linux "++" via
 { ==name name "|" | name |defvst } ">=" defq
 { ==name "}" | * ==f name "|" | f "*" | name "=" | } "}=" defq
 
-{ "/si010_e.asp?"
-  {
-    { [| "date '+MM=%-m&amp;YY=%Y'" |] +shell } +spawn ":" via
-    4096 :out .read "\n" str .split 0 -01 * :wait --
-  } * cat
-  fetch ":" via # /ri/si010_e.asp?MM=5&amp;YY=2015
+{ ==year ==month
+  [| "/si010_e.asp?MM=" month "&amp;YY=" year |] fetch ":" via # /ri/si010_e.asp?MM=5&amp;YY=2015
+
   "??" ==weekday "??" ==monthday "??:??" ==time 0 ==past
   [
     { ==line [
@@ -193,7 +190,7 @@ sys "+" via +linux "++" via
 } /agendaFilename deffst
 
 { ==title
-  [| "<html><head><title>" title "</title></head><body>\n" |]
+  [| "<html><head><title>" title "</title></head><body><h1>" title "</h1>\n" |]
 } /htmlHeader deffst
 
 {
@@ -227,19 +224,28 @@ sys "+" via +linux "++" via
   } /table deffst
 > "<>" via
 
-{ "=>" via
+{ "=>" via ==year ==month
   [|
-    "Sitzungsübersicht" htmlHeader
-    [
-      calendar { ":" via
-          [| :monthday ". " :time :past { " (vergangen)" } rep " - " :title |]
-          [| "/agenda/" :id |]
-        <>a
-      } each
-    ] <>ul
+    [| "Sitzungsübersicht " year "-" month |] htmlHeader
+    "<table>"
+    month year calendar { ":" via
+      "<tr>"
+        "<td>" :monthday "." month "." year "</td>"
+        "<td>" :time :past { " (vergangen)" } rep "</td>"
+        "<td>" :title [| "/agenda/" :id |] <>a "</td>"
+      "</tr>"
+    } each
+    "</table>"
     htmlFooter
   |] =>okHtml
 } /showCalendar deffst
+
+{ # ==request
+  [ "%-m" "%Y" ] { ==fmt
+    { [| "date +'" fmt "'" |] +shell } +spawn ":" via
+    4096 :out .read "\n" str .split 0 -01 * :wait --
+  } each -102 showCalendar
+} /showCurrentCalendar deffst
 
 { "=>" via ==id
   [|
@@ -388,7 +394,7 @@ sys "+" via +linux "++" via
         < "" ==name ==text > [ -01 ] ==children
       >
     }
-    { =>body "<text font=\"Sans\" size=\"12.00\" x=\"([^\"]+)\" y=\"([^\"]+)\" color=\"([^\"]+)\">(([^<>&]|&lt;|&gt;|&amp;)+)</text>" regex } {
+    { =>body "<text font=\"Sans\" size=\"12.00\" x=\"([0-9]+)[^\"]*\" y=\"([0-9]+)[^\"]*\" color=\"([^\"]+)\">(([^<>&]|&lt;|&gt;|&amp;)+)</text>" regex } {
       <
         "text" ==name map ==attr
         "Sans" /font attr =[]
@@ -458,6 +464,88 @@ sys "+" via +linux "++" via
   "Added." "text/plain" =>ok
 } /addComments deffst
 
+{ "=>" via ==id [| "/comments/" id |] ==identifier
+  "Removing comment" dump
+  =>args .page dump
+  =>body dump
+
+  # FIXME: input validation .page, .width, .height, .user (must exist and have valid format)
+  =>args .page txt .consume .u ==changedPage
+
+  [
+    { =>body "<stroke tool=\"([^\"]+)\" color=\"([^\"]+)\" width=\"([0-9.]+)\">(\n[0-9. ]+\n)</stroke>" regex } {
+      <
+        "stroke" ==name map ==attr
+        /tool attr =[]
+        /color attr =[]
+        /width attr =[]
+        =>args .user /user attr =[]
+
+        < "" ==name ==text > [ -01 ] ==children
+      >
+    }
+    { =>body "<text font=\"Sans\" size=\"12.00\" x=\"([0-9]+)[^\"]*\" y=\"([0-9]+)[^\"]*\" color=\"([^\"]+)\">(([^<>&]|&lt;|&gt;|&amp;)+)</text>" regex } {
+      <
+        "text" ==name map ==attr
+        "Sans" /font attr =[]
+        "12.00" /size attr =[]
+        /x attr =[]
+        /y attr =[]
+        /color attr =[]
+        =>args .user /user attr =[]
+
+        < "" ==name ==text -- > [ -01 ] ==children
+      >
+    }
+    { 1 } {
+      "Invalid body - ignoring request." dump
+      < "" ==name "" ==text >
+    }
+  ] conds ==removedElement
+
+  { ==cacheFile
+    sys .file ":" via :creating :writeonly cacheFile :open
+    EMPTYXOJ :writeall
+    :close
+  } identifier comments ":" via
+  
+  [|
+    { 8192 :read _ "" neq } { } loop :close
+  |] xml .parse { .name "page" eq } selectNodes ==pages
+
+  pages dump
+
+  { ==e
+    e .name removedElement .name eq {
+      1
+      removedElement .attr dom { ==k
+        k e .attr .has {
+          k e .attr * k removedElement .attr * neq { -- 0 } rep
+        } { -- 0 } ? *
+      } each
+      e .?children {
+        removedElement .?children {
+          e removedElement { .children 0 -01* .text } -20*10* neq { -- 0 } rep
+        } { -- 0 } ? *
+      } rep
+    } { 0 } ? *
+  } /isRemovedElement deffst
+
+  pages len changedPage ge {
+    changedPage 1 sub pages * { .name "layer" eq } selectNodes 0 -01 * _ .children { isRemovedElement not } grep
+                                                                         -01 .setChildren
+
+    identifier commentsFilename ==storageFile
+    "Rewriting: " storageFile cat dump
+    sys .file _ ":" via :truncating :creating :writeonly storageFile ".new" cat :open
+                pages writeXournal :close
+
+    storageFile ".new" cat storageFile +rename
+  } rep
+
+  "Removed." "text/plain" =>ok
+} /removeComments deffst
+
 { "=>" via ==id
   [| "/comments/" id |] ==identifier
   identifier commentsFilename fileExists {
@@ -508,7 +596,7 @@ map ==:PNGS map ==:GIFS
 
 {
   net .alg .httpServer "+" via
-  { 8091 } +port
+  { 8092 } +port
   {
     <
       { "text/html; charset=utf-8;" ok } =*okHtml
@@ -516,13 +604,15 @@ map ==:PNGS map ==:GIFS
     >' _ ":_" defvst ":" via
     :url dump
     [
-      { :url "/" eq } { :_ showCalendar }
+      { :url "/" eq } { :_ showCurrentCalendar }
+      { :url "/(\\d\\d\\d\\d)-(\\d\\d?)" regex } { :_ showCalendar }
       { :url "/agenda/(\\d+)$" regex } { :_ showAgenda }
       { :url "/editor/(\\d+)$" regex } { :_ showEditor }
       { :url "/editor/(\\d+).pdf$" regex } { :_ showDocument }
       { :url "/editor/(\\d+).xoj$" regex } { :_ showComments }
       { :url "/document/(\\d+)$" regex } { :_ showDocument }
       { :url "/comments/(\\d+)/add$" regex } { :_ addComments }
+      { :url "/comments/(\\d+)/remove$" regex } { :_ removeComments }
       { :url "/comments/(\\d+)$" regex } { :_ showComments }
       { :url "/pdf.js" eq } { PDFJS "text/javascript; charset=utf-8;" :ok }
       { :url "/pdf.worker.js" eq } { PDFJSWORKER "text/javascript; charset=utf-8;" :ok }
