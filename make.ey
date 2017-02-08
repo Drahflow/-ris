@@ -89,7 +89,12 @@ sys "+" via +linux "++" via
 
   "??" ==weekday "??" ==monthday "??:??" ==time 0 ==past
   [
+    0 ==col
     { ==line [
+      { line "<tr class=\"zl\\d+\" valign=\"top\">" regex }' {
+        0 =col
+      }
+      { line { "<td[ >](.*)" regex }' { col 1 add =col }' loop 0 }' { }
       { line "<td class=\"text2\" width=\"20\">(..)</td><td class=\"text2\" width=\"20\">(&nbsp;&nbsp;)?([^<]+)</td>" regex }' {
         =weekday -- =monthday
       }
@@ -98,6 +103,9 @@ sys "+" via +linux "++" via
       }
       { line "<td><a href=\"to010.asp\\?SILFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
         < ==id -- iso2utf8 sanitize ==title -- >=weekday >=monthday >=time >=past >
+      }
+      { col 6 eq { line "<td>([^<]+)</td>" regex } { 0 } ? * }' {
+        < "" ==id iso2utf8 sanitize ==title >=weekday >=monthday >=time >=past >
       }
     ] conds } :eachLine :close
   ]
@@ -189,6 +197,14 @@ sys "+" via +linux "++" via
   |]
 } /agendaFilename deffst
 
+{ # ==year ==month
+  calendar { .id "" neq } grep {
+    .id agenda { .hasDocument } grep {
+      .id fetchDocument .close
+    } each
+  } each
+} /populateCache deffst
+
 { ==title
   [| "<html><head><title>" title "</title></head><body><h1>" title "</h1>\n" |]
 } /htmlHeader deffst
@@ -232,7 +248,7 @@ sys "+" via +linux "++" via
       "<tr>"
         "<td>" :monthday "." month "." year "</td>"
         "<td>" :time :past { " (vergangen)" } rep "</td>"
-        "<td>" :title [| "/agenda/" :id |] <>a "</td>"
+        "<td>" :title :id "" neq { [| "/agenda/" :id |] <>a } rep "</td>"
       "</tr>"
     } each
     "</table>"
@@ -246,6 +262,18 @@ sys "+" via +linux "++" via
     4096 :out .read "\n" str .split 0 -01 * :wait --
   } each -102 showCalendar
 } /showCurrentCalendar deffst
+
+{
+  [ "%-m" "%Y" ] { ==fmt
+    { [| "date +'" fmt "'" |] +shell } +spawn ":" via
+    4096 :out .read "\n" str .split 0 -01 * :wait --
+  } each -10 populateCache
+
+  [ "%-m" "%Y" ] { ==fmt
+    { [| "date +'" fmt "' --date='today +1 month'" |] +shell } +spawn ":" via
+    4096 :out .read "\n" str .split 0 -01 * :wait --
+  } each -10 populateCache
+} /populateCurrentCache deffst
 
 { "=>" via ==id
   [|
@@ -263,13 +291,13 @@ sys "+" via +linux "++" via
 } /showAgenda deffst
 
 { "=>" via ==id
-  VIEWER =>okHtml
+  =>cached VIEWER =>okHtml
 } /showEditor deffst
 
 { "=>" via fetchDocument ":" via
   [|
     { 8192 :read _ "" neq } { } loop :close
-  |] "application/pdf" =>ok
+  |] =>cached "application/pdf" =>ok
 } /showDocument deffst
 
 { =*p # ==start
@@ -601,28 +629,32 @@ map ==:PNGS map ==:GIFS
     <
       { "text/html; charset=utf-8;" ok } =*okHtml
       { "text/html; charset=utf-8;" fail } =*failHtml
+      { "Cache-Control: max-age=3600" addHeader } =*cached
     >' _ ":_" defvst ":" via
+
     :url dump
     [
       { :url "/" eq } { :_ showCurrentCalendar }
-      { :url "/(\\d\\d\\d\\d)-(\\d\\d?)" regex } { :_ showCalendar }
-      { :url "/agenda/(\\d+)$" regex } { :_ showAgenda }
-      { :url "/editor/(\\d+)$" regex } { :_ showEditor }
-      { :url "/editor/(\\d+).pdf$" regex } { :_ showDocument }
-      { :url "/editor/(\\d+).xoj$" regex } { :_ showComments }
-      { :url "/document/(\\d+)$" regex } { :_ showDocument }
-      { :url "/comments/(\\d+)/add$" regex } { :_ addComments }
-      { :url "/comments/(\\d+)/remove$" regex } { :_ removeComments }
-      { :url "/comments/(\\d+)$" regex } { :_ showComments }
-      { :url "/pdf.js" eq } { PDFJS "text/javascript; charset=utf-8;" :ok }
-      { :url "/pdf.worker.js" eq } { PDFJSWORKER "text/javascript; charset=utf-8;" :ok }
-      { :url "/compatibility.js" eq } { COMPATIBILITYJS "text/javascript; charset=utf-8;" :ok }
-      { :url "/l10n.js" eq } { LOCALIZATIONJS "text/javascript; charset=utf-8;" :ok }
-      { :url "/locale.properties" eq } { LOCALE "application/l10n" :ok }
-      { :url "/viewer.js" eq } { VIEWERJS "text/javascript; charset=utf-8;" :ok }
-      { :url "/viewer.css" eq } { VIEWERCSS "text/css; charset=utf-8;" :ok }
-      { :url PNGS .has } { :url PNGS * "image/png" :ok }
-      { :url GIFS .has } { :url GIFS * "image/gif" :ok }
+      { :url "^/(\\d\\d\\d\\d)-(\\d\\d?)" regex } { :_ showCalendar }
+      { :url "^/agenda/(\\d+)$" regex } { :_ showAgenda }
+      { :url "^/editor/(\\d+)$" regex } { :_ showEditor }
+      { :url "^/editor/(\\d+).pdf$" regex } { :_ showDocument }
+      { :url "^/editor/(\\d+).xoj$" regex } { :_ showComments }
+      { :url "^/document/(\\d+)$" regex } { :_ showDocument }
+      { :url "^/comments/(\\d+)/add$" regex } { :_ addComments }
+      { :url "^/comments/(\\d+)/remove$" regex } { :_ removeComments }
+      { :url "^/comments/(\\d+)$" regex } { :_ showComments }
+      { :url "/pdf.js" eq } { PDFJS :cached "text/javascript; charset=utf-8;" :ok }
+      { :url "/pdf.worker.js" eq } { PDFJSWORKER :cached "text/javascript; charset=utf-8;" :ok }
+      { :url "/compatibility.js" eq } { COMPATIBILITYJS :cached "text/javascript; charset=utf-8;" :ok }
+      { :url "/l10n.js" eq } { LOCALIZATIONJS :cached "text/javascript; charset=utf-8;" :ok }
+      { :url "/locale.properties" eq } { LOCALE :cached "application/l10n" :ok }
+      { :url "/viewer.js" eq } { VIEWERJS :cached "text/javascript; charset=utf-8;" :ok }
+      { :url "/viewer.css" eq } { VIEWERCSS :cached "text/css; charset=utf-8;" :ok }
+      { :url PNGS .has } { :url PNGS * :cached "image/png" :ok }
+      { :url GIFS .has } { :url GIFS * :cached "image/gif" :ok }
+      { :url "^/precache/(\\d\\d\\d\\d)-(\\d\\d?)" regex } { populateCache "Cached." "text/plain" :ok }
+      { :url "/precache" eq } { populateCurrentCache "Cached." "text/plain" :ok }
       { 1 } { :_ showNotFound }
     ] conds
   } +request
