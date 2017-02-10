@@ -89,19 +89,19 @@ sys "+" via +linux "++" via
 
   "??" ==weekday "??" ==monthday "??:??" ==time 0 ==past
   [
-    0 ==col
+    1 neg ==col
     { ==line [
-      { line "<tr class=\"zl\\d+\" valign=\"top\">" regex }' {
+      { 5 line str .prefix "	<tr " eq { line "<tr class=\"zl\\d+\" valign=\"top\">" regex } { 0 } ? * }' {
         0 =col
       }
-      { line { "<td[ >](.*)" regex }' { col 1 add =col }' loop 0 }' { }
-      { line "<td class=\"text2\" width=\"20\">(..)</td><td class=\"text2\" width=\"20\">(&nbsp;&nbsp;)?([^<]+)</td>" regex }' {
+      { col 0 ge { line { "<td[ >](.*)" regex }' { col 1 add =col }' loop } rep 0 }' { }
+      { col 2 eq { line "<td class=\"text2\" width=\"20\">(..)</td><td class=\"text2\" width=\"20\">(&nbsp;&nbsp;)?([^<]+)</td>" regex } { 0 } ? * }' {
         =weekday -- =monthday
       }
-      { line "<td class=\"text2\">(..:..)( - ..:..)?&nbsp;</td>" regex }' {
+      { col 3 eq { line "<td class=\"text2\">(..:..)( - ..:..)?&nbsp;</td>" regex } { 0 } ? * }' {
         =time "" neq =past
       }
-      { line "<td><a href=\"to010.asp\\?SILFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
+      { col 6 eq { line "<td><a href=\"to010.asp\\?SILFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex } { 0 } ? * }' {
         < ==id -- iso2utf8 sanitize ==title -- >=weekday >=monthday >=time >=past >
       }
       { col 6 eq { line "<td>([^<]+)</td>" regex } { 0 } ? * }' {
@@ -257,22 +257,19 @@ sys "+" via +linux "++" via
 } /showCalendar deffst
 
 { # ==request
-  [ "%-m" "%Y" ] { ==fmt
-    { [| "date +'" fmt "'" |] +shell } +spawn ":" via
-    4096 :out .read "\n" str .split 0 -01 * :wait --
-  } each -102 showCalendar
+  { [| "date +'%-m %Y'" |] +shell } +spawn ":" via
+  4096 :out .read "\n" str .split 0 -01 * :wait --
+  " " str .split 2 dearray -102 showCalendar
 } /showCurrentCalendar deffst
 
 {
-  [ "%-m" "%Y" ] { ==fmt
-    { [| "date +'" fmt "'" |] +shell } +spawn ":" via
-    4096 :out .read "\n" str .split 0 -01 * :wait --
-  } each -10 populateCache
+  { [| "date +'%-m %Y'" |] +shell } +spawn ":" via
+  4096 :out .read "\n" str .split 0 -01 * :wait --
+  " " str .split 2 dearray populateCache
 
-  [ "%-m" "%Y" ] { ==fmt
-    { [| "date +'" fmt "' --date='today +1 month'" |] +shell } +spawn ":" via
-    4096 :out .read "\n" str .split 0 -01 * :wait --
-  } each -10 populateCache
+  { [| "date +'%-m %Y' --date='today +1 month'" |] +shell } +spawn ":" via
+  4096 :out .read "\n" str .split 0 -01 * :wait --
+  " " str .split 2 dearray populateCache
 } /populateCurrentCache deffst
 
 { "=>" via ==id
@@ -484,10 +481,11 @@ sys "+" via +linux "++" via
 
   identifier commentsFilename ==storageFile
   "Rewriting: " storageFile cat dump
-  sys .file _ ":" via :truncating :creating :writeonly storageFile ".new" cat :open
+  [| storageFile "." ++getpid txt .produce .u cat |] ==newFilename
+  sys .file _ ":" via :truncating :creating :writeonly newFilename :open
               pages writeXournal :close
 
-  storageFile ".new" cat storageFile +rename
+  newFilename storageFile +rename
 
   "Added." "text/plain" =>ok
 } /addComments deffst
@@ -565,10 +563,11 @@ sys "+" via +linux "++" via
 
     identifier commentsFilename ==storageFile
     "Rewriting: " storageFile cat dump
-    sys .file _ ":" via :truncating :creating :writeonly storageFile ".new" cat :open
+    [| storageFile "." ++getpid txt .produce .u cat |] ==newFilename
+    sys .file _ ":" via :truncating :creating :writeonly newFilename :open
                 pages writeXournal :close
 
-    storageFile ".new" cat storageFile +rename
+    newFilename storageFile +rename
   } rep
 
   "Removed." "text/plain" =>ok
@@ -660,6 +659,7 @@ map ==:PNGS map ==:GIFS
   } +request
   { 64 1024 1024 mul mul } +outputBufferLimit
   { 1024 1024 mul } +inputBufferLimit
+  { -- ++fork -- ++fork -- } +afterListen
   +run
 } /forallris sys .freeze
 
