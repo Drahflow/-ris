@@ -6828,6 +6828,7 @@ var PDFViewerApplication = {
       try {
         xhr.open('GET', file);
         xhr.overrideMimeType("text/xml");
+        xhr.timeout = 10000;
         xhr.send();
       } catch (e) {
         PDFViewerApplication.error(mozL10n.get('loading_error_comments', null,
@@ -6869,6 +6870,7 @@ var PDFViewerApplication = {
           "&height=" + page.viewport.height / page.viewport.transform[3] * -1 +
           "&user=" + document.getElementById('toolbarEdit-username').value);
       xhr.setRequestHeader("Content-type", "text/xml");
+      xhr.timeout = 10000;
       xhr.send(element);
     } catch (e) {
       PDFViewerApplication.error(mozL10n.get('editing_error_comments', null,

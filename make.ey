@@ -121,22 +121,19 @@ sys "+" via +linux "++" via
   { "?" ==maybeTitle "?" ==title "?" ==position "?" ==id "?" ==number }'
     _ * =*reset
   [
-    { ==line [
-      { line "<!--[0-9]+ -->" regex }' { maybeTitle iso2utf8 sanitize =title }
-      { line stripLinkParts "<td>([^<]+)</td>" regex }' { =maybeTitle }
-      { line stripLinkParts "<td>([^<]+)$" regex }' { =maybeTitle }
-      { line stripLinkParts "^([^<]+)$" regex }' { { " " cat -01 cat }=maybeTitle }
-      { line stripLinkParts "^([^<]+)</td>" regex }' { { " " cat -01 cat }=maybeTitle }
-      { line "<td class=\"text4\" nowrap=\"nowrap\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></td>" regex }' {
+    { _ ==line stripLinkParts ==strippedLine [
+      { line "^<!--[0-9]+ -->" regex }' { maybeTitle iso2utf8 sanitize =title }
+      { strippedLine "^(<td>)([^<]+)(</td>|$)" regex }' { "<td>" eq "" maybeTitle ? -01 cat =maybeTitle -- }
+      { line "^	*<td class=\"text4\" nowrap=\"nowrap\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></td>" regex }' {
         =position
       }
-      { line "<td class=\"text4\" nowrap=\"nowrap\"><span style=\"background-color:#[^\"]+\" title=\"[^\"]+\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></span></td>" regex }' {
+      { line "^	*<td class=\"text4\" nowrap=\"nowrap\"><span style=\"background-color:#[^\"]+\" title=\"[^\"]+\"><a href=\"[^\"]+\" title=\"[^\"]+\">.&nbsp;([0-9.]+)</a></span></td>" regex }' {
         =position
       }
-      { line "<td nowrap=\"nowrap\"><a href=\"vo020.asp\\?VOLFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
+      { line "^<td nowrap=\"nowrap\"><a href=\"vo020.asp\\?VOLFDNR=([^\"]+)\">(<b>)?([^<]+)(</b>)?</a></td>" regex }' {
         =id -- =number --
       }
-      { line "	</tr>" regex position "?" neq and }' {
+      { line "^	</tr>" regex position "?" neq and }' {
         < number "?" neq ==hasDocument >=id >=number >=title >=position >
         reset
       }
