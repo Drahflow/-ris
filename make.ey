@@ -203,7 +203,13 @@ sys "+" via +linux "++" via
 } /populateCache deffst
 
 { ==title
-  [| "<html><head><title>" title "</title></head><body><h1>" title "</h1>\n" |]
+  [|
+    "<html><head>"
+    "<title>" title "</title>"
+    "<style type=\"text/css\">"
+    "table.agenda td:nth-of-type(2) { min-width: 100px; }"
+    "</style>"
+    "</head><body><h1>" title "</h1>\n" |]
 } /htmlHeader deffst
 
 {
@@ -222,9 +228,9 @@ sys "+" via +linux "++" via
       "</ul>\n"
     |]
   } /ul deffst
-  { ==rows
+  { ==attrs ==rows
     [|
-      "<table>\n"
+      "<table" attrs .?class { " class=\"" attrs .class "\"" } rep ">\n"
       rows { ==cols
         "<tr>"
         cols {
@@ -279,7 +285,7 @@ sys "+" via +linux "++" via
           :title :hasDocument { [| "/editor/" :id |] <>a } rep
         ]
       } each
-    ] <>table
+    ] < /agenda ==class > <>table
     htmlFooter
   |] =>okHtml
 } /showAgenda deffst

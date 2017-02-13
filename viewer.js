@@ -4781,6 +4781,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
 
         var text = self.currentText.innerHTML;
         text = text.replace(/<br>/g, "\n");
+        text = text.replace(/&nbsp;/g, " ");
 
         var element =
           '<text font="Sans" size="12.00" ' +
@@ -4903,6 +4904,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
 
             var text = element.innerHTML;
             text = text.replace(/<br>/g, "\n");
+            text = text.replace(/&nbsp;/g, " ");
 
             var element =
               '<text font="Sans" size="12.00" ' +
