@@ -1,5 +1,5 @@
 run: remote
-	ssh root@drahflow.name 'killall forallris; /opt/forallris/forallris'
+	ssh root@drahflow.name 'killall forallris; cd /opt/forallris; /opt/forallris/forallris'
 	sleep 5
 
 remote:

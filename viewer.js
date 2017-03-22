@@ -4796,6 +4796,13 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
         self.commentsEditor.add(self.pdfPage.pageIndex, element);
       };
 
+      self._keydown = function(e) {
+        if(e.keyCode == 13 && !e.shiftKey) {
+          e.preventDefault();
+          self._blur();
+        }
+      };
+
       self._mousemove = function(e) {
         var offset = totalOffset(page);
         var x = e.pageX - offset.x - page.clientTop;
@@ -4843,6 +4850,7 @@ var CommentsLayerBuilder = (function CommentsLayerBuilderClosure() {
           self.currentText = box;
 
           box.addEventListener('blur', self._blur);
+          box.addEventListener('keydown', self._keydown);
           self.commentsEditor.startTextEditing();
         } else if(self.commentsEditor.getCurrentTool() == 'highlighter' ||
                   self.commentsEditor.getCurrentTool() == 'pen') {
